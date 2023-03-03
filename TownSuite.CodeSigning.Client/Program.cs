@@ -21,22 +21,34 @@ for (int i = 0; i < args.Length; i++)
         string tokenFile = args[i + 1];
         token = System.IO.File.ReadAllText(tokenFile);
     }
+    else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase) 
+        || string.Equals(args[i], "--help", StringComparison.InvariantCultureIgnoreCase)
+        || string.Equals(args[i], "-h", StringComparison.InvariantCultureIgnoreCase)
+        || string.Equals(args[i], "--h", StringComparison.InvariantCultureIgnoreCase)
+        || string.Equals(args[i], "/?", StringComparison.InvariantCultureIgnoreCase)
+        )
+    {
+        PrintHelp();
+    }
 }
 
 if (string.IsNullOrWhiteSpace(filepath))
 {
     Console.WriteLine("-file must be set");
+    PrintHelp();
     System.Environment.Exit(-1);
 }
 
 if (string.IsNullOrWhiteSpace(url))
 {
     Console.WriteLine("-url must be set");
+    PrintHelp();
     System.Environment.Exit(-1);
 }
 if (string.IsNullOrWhiteSpace(token))
 {
     Console.WriteLine("-token must be set");
+    PrintHelp();
     System.Environment.Exit(-1);
 }
 
@@ -45,18 +57,11 @@ var client = new HttpClient
     BaseAddress = new(url)
 };
 
-await using var inputStream = System.IO.File.OpenRead(filepath);
-using var request = new HttpRequestMessage(HttpMethod.Post, "sign");
-using var content = new MultipartFormDataContent
-{
-    { new StreamContent(inputStream), "file", System.IO.Path.GetFileName(filepath) }
-};
-
-request.Content = content;
-
+var request = new HttpRequestMessage(HttpMethod.Post, url);
+using var fs = File.OpenRead(filepath);
+request.Content = new StreamContent(fs);
 var response = await client.SendAsync(request);
-inputStream.Close();
-
+fs.Close();
 if (response.IsSuccessStatusCode)
 {
     using var resultStream = await  response.Content.ReadAsStreamAsync();
@@ -68,4 +73,17 @@ if (response.IsSuccessStatusCode)
 else
 {
     Console.WriteLine("Failed to sign file");
+}
+
+void PrintHelp()
+{
+    Console.WriteLine();
+    Console.WriteLine("Options");
+    Console.WriteLine("-help --help -h --h /?");
+    Console.WriteLine("-file \"path to dll or exe\"");
+    Console.WriteLine("-url \"url to signing server\"");
+    Console.WriteLine("-token \"the auth token\" or -tokenfile \"path to plain text file holding token\"");
+    Console.WriteLine("");
+    Console.WriteLine("Example");
+    Console.WriteLine(".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
 }
