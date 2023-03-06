@@ -21,7 +21,7 @@ for (int i = 0; i < args.Length; i++)
         string tokenFile = args[i + 1];
         token = System.IO.File.ReadAllText(tokenFile);
     }
-    else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase) 
+    else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase)
         || string.Equals(args[i], "--help", StringComparison.InvariantCultureIgnoreCase)
         || string.Equals(args[i], "-h", StringComparison.InvariantCultureIgnoreCase)
         || string.Equals(args[i], "--h", StringComparison.InvariantCultureIgnoreCase)
@@ -52,27 +52,39 @@ if (string.IsNullOrWhiteSpace(token))
     System.Environment.Exit(-1);
 }
 
-var client = new HttpClient
+try
 {
-    BaseAddress = new(url)
-};
+    var client = new HttpClient
+    {
+        BaseAddress = new(url),
+        Timeout = TimeSpan.FromMilliseconds(10000)
+    };
 
-var request = new HttpRequestMessage(HttpMethod.Post, url);
-using var fs = File.OpenRead(filepath);
-request.Content = new StreamContent(fs);
-var response = await client.SendAsync(request);
-fs.Close();
-if (response.IsSuccessStatusCode)
-{
-    using var resultStream = await  response.Content.ReadAsStreamAsync();
-    using var memoryStream = new MemoryStream();
-    resultStream.CopyTo(memoryStream);
-    await File.WriteAllBytesAsync(filepath, memoryStream.ToArray());
-    Console.WriteLine($"Signed file: {filepath}");
+    var request = new HttpRequestMessage(HttpMethod.Post, url);
+    using var fs = File.OpenRead(filepath);
+    request.Content = new StreamContent(fs);
+    var response = await client.SendAsync(request);
+    fs.Close();
+    if (response.IsSuccessStatusCode)
+    {
+        using var resultStream = await response.Content.ReadAsStreamAsync();
+        using var memoryStream = new MemoryStream();
+        resultStream.CopyTo(memoryStream);
+        await File.WriteAllBytesAsync(filepath, memoryStream.ToArray());
+        Console.WriteLine($"Signed file: {filepath}");
+    }
+    else
+    {
+        Console.WriteLine("Failed to sign file");
+        var failedOutput = await response.Content.ReadAsStringAsync();
+        Console.WriteLine(failedOutput);
+        Environment.Exit(-1);
+    }
 }
-else
+catch (Exception ex)
 {
-    Console.WriteLine("Failed to sign file");
+    Console.WriteLine(ex);
+    Environment.Exit(-2);
 }
 
 void PrintHelp()
