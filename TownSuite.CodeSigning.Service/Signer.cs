@@ -16,32 +16,38 @@
 
                 p.StartInfo.Arguments = _settings.SignToolOptions.Replace("{FilePath}", currentfile);
                 p.StartInfo.UseShellExecute = false;
+                p.StartInfo.ErrorDialog = false;
                 p.StartInfo.CreateNoWindow = true;
                 p.StartInfo.RedirectStandardError = true;
                 p.StartInfo.RedirectStandardOutput = true;
 
                 p.Start();
 
-                string output = p.StandardOutput.ReadToEnd();
-                if (!string.IsNullOrWhiteSpace(output))
+                // see https://stackoverflow.com/questions/5693191/c-sharp-run-multiple-non-blocking-external-programs-in-parallel/5695109#5695109
+                p.ErrorDataReceived += (sender, errorLine) =>
                 {
-                    Console.WriteLine($"SignToolInternal StandardOutput: {output}");
-                }
-                string errors = p.StandardError.ReadToEnd();
-
-                p.WaitForExit();
-                int exitCode = p.ExitCode;
-                if (exitCode > 0)
-                {
-                    var msg = string.Format("Error signing dlls: {0}", currentfile);
-                    System.Console.WriteLine(msg);
-                    if (!string.IsNullOrWhiteSpace(errors))
+                    if (errorLine.Data != null)
                     {
-                        Console.WriteLine($"SignToolInternal StandardError: {errors}");
+                        Console.WriteLine($"SignToolInternal StandardError: {errorLine.Data}");
                     }
+                };
+                p.OutputDataReceived += (sender, outputLine) =>
+                {
+                    if (outputLine.Data != null)
+                    {
+                        Console.WriteLine($"SignToolInternal StandardOutput: {outputLine.Data}");
+                    }
+                };
+                p.BeginErrorReadLine();
+                p.BeginOutputReadLine();
+
+                if (!p.WaitForExit(_settings.SigntoolTimeoutInMs))
+                {
+                    Console.WriteLine("signtool timeout reached. Cancelling code signing attempt.");
+                    p.Kill();
+                    return false;
                 }
-                p.Close();
-                return exitCode == 0;
+                return p.ExitCode == 0;
             }
         }
     }
