@@ -1,4 +1,7 @@
-﻿namespace TownSuite.CodeSigning.Service
+﻿using Microsoft.VisualBasic;
+using System.Text;
+
+namespace TownSuite.CodeSigning.Service
 {
     public class Signer
     {
@@ -8,8 +11,9 @@
             _settings = settings;
         }
 
-        public bool Sign(string currentfile)
+        public (bool IsSigned, string Message) Sign(string currentfile)
         {
+            var msg = new StringBuilder();
             using (var p = new System.Diagnostics.Process())
             {
                 p.StartInfo.FileName = _settings.SignToolPath;
@@ -28,14 +32,14 @@
                 {
                     if (errorLine.Data != null)
                     {
-                        Console.WriteLine($"SignToolInternal StandardError: {errorLine.Data}");
+                        msg.AppendLine($"SignToolInternal StandardError: {errorLine.Data}");
                     }
                 };
                 p.OutputDataReceived += (sender, outputLine) =>
                 {
                     if (outputLine.Data != null)
                     {
-                        Console.WriteLine($"SignToolInternal StandardOutput: {outputLine.Data}");
+                        msg.AppendLine($"SignToolInternal StandardOutput: {outputLine.Data}");
                     }
                 };
                 p.BeginErrorReadLine();
@@ -43,11 +47,13 @@
 
                 if (!p.WaitForExit(_settings.SigntoolTimeoutInMs))
                 {
-                    Console.WriteLine("signtool timeout reached. Cancelling code signing attempt.");
+                    msg.AppendLine("signtool timeout reached. Cancelling code signing attempt.");
+                    Console.WriteLine(msg.ToString());
                     p.Kill();
-                    return false;
+                    return (false, msg.ToString());
                 }
-                return p.ExitCode == 0;
+                Console.WriteLine(msg.ToString());
+                return (p.ExitCode == 0, msg.ToString());
             }
         }
     }

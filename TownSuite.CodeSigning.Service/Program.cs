@@ -39,23 +39,24 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
         }
 
         var signer = new Signer(settings);
-        bool isSigned = signer.Sign(workingFilePath);
+        var results = signer.Sign(workingFilePath);
 
-        if (isSigned)
+        if (results.IsSigned)
         {
             var file = await File.ReadAllBytesAsync(workingFilePath);
             return Results.File(file);
         }
+        return Results.Problem(title: "Failure to sign", detail: results.Message, statusCode: 500);
     }
     catch (Exception ex)
     {
         Console.WriteLine(ex);
+        return Results.Problem(title: "Failure to sign", detail: ex.Message ?? "", statusCode: 500); 
     }
     finally
     {
         File.Delete(workingFilePath);
     }
-    return Results.Problem("Failure to sign", statusCode: 500);
 });
 
 static string GetTempFolder()
@@ -64,4 +65,3 @@ static string GetTempFolder()
 }
 
 app.Run();
-
