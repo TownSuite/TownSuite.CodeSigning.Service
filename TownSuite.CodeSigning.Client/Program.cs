@@ -4,6 +4,7 @@ string[] filepaths = null;
 string url = string.Empty;
 string token = string.Empty;
 bool quickFail = false;
+bool ignoreFailures = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -27,6 +28,10 @@ for (int i = 0; i < args.Length; i++)
     else if (string.Equals(args[i], "-quickfail", StringComparison.InvariantCultureIgnoreCase))
     {
         quickFail = true;
+    }
+    else if (string.Equals(args[i], "-ignorefailures", StringComparison.InvariantCultureIgnoreCase))
+    {
+        ignoreFailures = true;
     }
     else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase)
         || string.Equals(args[i], "--help", StringComparison.InvariantCultureIgnoreCase)
@@ -91,7 +96,7 @@ try
             var failedOutput = await response.Content.ReadAsStringAsync();
             Console.WriteLine(failedOutput);
            
-            if (quickFail)
+            if (quickFail && !ignoreFailures)
             {
                 Console.WriteLine("Quick fail");
                 Environment.Exit(-1);
@@ -99,7 +104,7 @@ try
         }
     }
 
-    if (failures)
+    if (failures && !ignoreFailures)
     {
         Environment.Exit(-1);
     }
@@ -107,7 +112,10 @@ try
 catch (Exception ex)
 {
     Console.WriteLine(ex);
-    Environment.Exit(-2);
+    if (!ignoreFailures)
+    {
+        Environment.Exit(-2);
+    }
 }
 
 
@@ -120,7 +128,8 @@ void PrintHelp()
     Console.WriteLine("    the file path can contain multiple files by ; separating them.");
     Console.WriteLine("-url \"url to signing server\"");
     Console.WriteLine("-token \"the auth token\" or -tokenfile \"path to plain text file holding token\"");
-    Console.WriteLine("quickfail if this is set the program will exit on the first faliure.");
+    Console.WriteLine("-quickfail if this is set the program will exit on the first faliure.");
+    Console.WriteLine("-ignorefailures if this is set the program will ignore all errors and override quickfail.");
     Console.WriteLine("");
     Console.WriteLine("Example");
     Console.WriteLine(".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
