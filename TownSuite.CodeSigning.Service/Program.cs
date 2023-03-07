@@ -38,7 +38,7 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
             await File.WriteAllBytesAsync(workingFilePath, memoryStream.ToArray());
         }
 
-        var signer = new Signer(settings);
+        using var signer = new Signer(settings);
         var results = signer.Sign(workingFilePath);
 
         if (results.IsSigned)
