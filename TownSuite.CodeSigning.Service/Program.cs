@@ -16,11 +16,7 @@ var app = builder.Build();
 app.UseHttpsRedirection();
 
 string workingfolder = GetTempFolder();
-if (Directory.Exists(workingfolder))
-{
-    Directory.Delete(workingfolder, true);
-}
-Directory.CreateDirectory(workingfolder);
+InitializeWorkingFolder(workingfolder);
 
 app.UseExceptionHandler(exceptionHandlerApp
     => exceptionHandlerApp.Run(async context
@@ -51,11 +47,11 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
     catch (Exception ex)
     {
         Console.WriteLine(ex);
-        return Results.Problem(title: "Failure to sign", detail: ex.Message ?? "", statusCode: 500); 
+        return Results.Problem(title: "Failure to sign", detail: ex.Message ?? "", statusCode: 500);
     }
     finally
     {
-        File.Delete(workingFilePath);
+        Cleanup(workingFilePath);
     }
 });
 
@@ -65,3 +61,35 @@ static string GetTempFolder()
 }
 
 app.Run();
+
+static void Cleanup(string workingFilePath)
+{
+    try
+    {
+        File.Delete(workingFilePath);
+    }
+    catch
+    {
+        Console.WriteLine($"failed to cleanup file {workingFilePath}");
+    }
+}
+
+static void InitializeWorkingFolder(string workingfolder)
+{
+    try
+    {
+        if (Directory.Exists(workingfolder))
+        {
+            Directory.Delete(workingfolder, true);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("InitializeWorkingFolder failed to delete the old working folder");
+    }
+
+    if (!Directory.Exists(workingfolder))
+    {
+        Directory.CreateDirectory(workingfolder);
+    }
+}
