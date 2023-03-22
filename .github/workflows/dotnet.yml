@@ -1,0 +1,50 @@
+name: .NET
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  linux-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 6.0.x
+      - name: Restore dependencies
+        run: dotnet restore TownSuite.CodeSigning.Service.sln
+      - name: Build
+        run: dotnet build -c Release TownSuite.CodeSigning.Service.sln --no-restore
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-x64
+          path: |
+            TownSuite.CodeSigning.Service/TownSuite.CodeSigning.Service/bin/Release/net6.0
+            TownSuite.CodeSigning.Service/TownSuite.CodeSigning.Client/bin/Release/net6.0
+          retention-days: 1
+
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 6.0.x
+      - name: Restore dependencies
+        run: dotnet restore TownSuite.CodeSigning.Service.sln
+      - name: Build
+        run: dotnet build -c Release TownSuite.CodeSigning.Service.sln --no-restore
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: win-x64
+          path: |
+            TownSuite.CodeSigning.Service/TownSuite.CodeSigning.Service/bin/Release/net6.0
+            TownSuite.CodeSigning.Service/TownSuite.CodeSigning.Client/bin/Release/net6.0
+          retention-days: 1
