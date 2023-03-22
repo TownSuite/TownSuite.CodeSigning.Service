@@ -5,6 +5,7 @@ string url = string.Empty;
 string token = string.Empty;
 bool quickFail = false;
 bool ignoreFailures = false;
+int timeoutInMs = 10000;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -32,6 +33,13 @@ for (int i = 0; i < args.Length; i++)
     else if (string.Equals(args[i], "-ignorefailures", StringComparison.InvariantCultureIgnoreCase))
     {
         ignoreFailures = true;
+    }
+    else if (string.Equals(args[i], "-timeout", StringComparison.InvariantCultureIgnoreCase))
+    {
+        if (!int.TryParse(args[i + 1], out timeoutInMs))
+        {
+            Console.WriteLine($"-timeout value failed to parse.  defaulting to {timeoutInMs}");
+        }
     }
     else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase)
         || string.Equals(args[i], "--help", StringComparison.InvariantCultureIgnoreCase)
@@ -70,38 +78,13 @@ try
     var client = new HttpClient
     {
         BaseAddress = new(url),
-        Timeout = TimeSpan.FromMilliseconds(10000)
+        Timeout = TimeSpan.FromMilliseconds(timeoutInMs)
     };
 
     bool failures = false;
     foreach (var filepath in filepaths)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, url);
-        using var fs = File.OpenRead(filepath);
-        request.Content = new StreamContent(fs);
-        var response = await client.SendAsync(request);
-        fs.Close();
-        if (response.IsSuccessStatusCode)
-        {
-            using var resultStream = await response.Content.ReadAsStreamAsync();
-            using var memoryStream = new MemoryStream();
-            resultStream.CopyTo(memoryStream);
-            await File.WriteAllBytesAsync(filepath, memoryStream.ToArray());
-            Console.WriteLine($"Signed file: {filepath}");
-        }
-        else
-        {
-            failures = true;
-            Console.WriteLine($"Failed to sign file: {filepath}");
-            var failedOutput = await response.Content.ReadAsStringAsync();
-            Console.WriteLine(failedOutput);
-           
-            if (quickFail && !ignoreFailures)
-            {
-                Console.WriteLine("Quick fail");
-                Environment.Exit(-1);
-            }
-        }
+        failures = await CallSigningService(url, quickFail, ignoreFailures, client, failures, filepath);
     }
 
     if (failures && !ignoreFailures)
@@ -130,7 +113,49 @@ void PrintHelp()
     Console.WriteLine("-token \"the auth token\" or -tokenfile \"path to plain text file holding token\"");
     Console.WriteLine("-quickfail if this is set the program will exit on the first faliure.");
     Console.WriteLine("-ignorefailures if this is set the program will ignore all errors and override quickfail.");
+    Console.WriteLine("-timeout \"10000\"");
+    Console.WriteLine("    Timeout is in ms.  Defaults to 10000.");
     Console.WriteLine("");
     Console.WriteLine("Example");
     Console.WriteLine(".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
+}
+
+static async Task<bool> CallSigningService(string url, bool quickFail, bool ignoreFailures, HttpClient client, bool failures, string filepath)
+{
+    try
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        using var fs = File.OpenRead(filepath);
+        request.Content = new StreamContent(fs);
+        var response = await client.SendAsync(request);
+        fs.Close();
+        if (response.IsSuccessStatusCode)
+        {
+            using var resultStream = await response.Content.ReadAsStreamAsync();
+            using var memoryStream = new MemoryStream();
+            resultStream.CopyTo(memoryStream);
+            await File.WriteAllBytesAsync(filepath, memoryStream.ToArray());
+            Console.WriteLine($"Signed file: {filepath}");
+        }
+        else
+        {
+            failures = true;
+            Console.WriteLine($"Failed to sign file: {filepath}");
+            var failedOutput = await response.Content.ReadAsStringAsync();
+            Console.WriteLine(failedOutput);
+
+            if (quickFail && !ignoreFailures)
+            {
+                Console.WriteLine("Quick fail");
+                Environment.Exit(-1);
+            }
+        }
+    }
+    catch (Exception)
+    {
+        Console.WriteLine($"Failed to sign file: {filepath}");
+        throw;
+    }
+
+    return failures;
 }
