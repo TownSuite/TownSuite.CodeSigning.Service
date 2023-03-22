@@ -83,7 +83,7 @@ static void InitializeWorkingFolder(string workingfolder)
             Directory.Delete(workingfolder, true);
         }
     }
-    catch (Exception ex)
+    catch (Exception)
     {
         Console.WriteLine("InitializeWorkingFolder failed to delete the old working folder");
     }
