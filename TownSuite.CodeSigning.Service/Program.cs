@@ -9,6 +9,11 @@ using Microsoft.AspNetCore.Mvc;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<Settings>(s => builder.Configuration.GetSection("Settings").Get<Settings>());
+builder.WebHost.UseKestrel(o =>
+{
+    var settings = builder.Configuration.GetSection("Settings").Get<Settings>();
+    o.Limits.MaxRequestBodySize = settings.MaxRequestBodySize;
+});
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
