@@ -14,6 +14,36 @@ builder.WebHost.UseKestrel(o =>
     var settings = builder.Configuration.GetSection("Settings").Get<Settings>();
     o.Limits.MaxRequestBodySize = settings.MaxRequestBodySize;
 });
+
+var jwtSettings = builder.Configuration.GetSection("JWT").Get<JwtSettings>();
+
+if (jwtSettings != null && !string.IsNullOrWhiteSpace(jwtSettings.Secret) &&
+    !string.Equals(jwtSettings.Secret, "PLACEHOLDER", StringComparison.OrdinalIgnoreCase))
+{
+    var symmetricSecurityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret));
+    builder.Services.AddAuthentication(options => { options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme; })
+        .AddJwtBearer(options =>
+        {
+            options.SaveToken = true;
+            options.TokenValidationParameters = new TokenValidationParameters()
+            {
+                ValidIssuer = jwtSettings.ValidIssuer,
+                ValidAudience = jwtSettings.ValidAudience,
+                IssuerSigningKey = symmetricSecurityKey
+            };
+        });
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy(jwtSettings.PolicyName, policy =>
+        {
+            policy.AuthenticationSchemes.Add(JwtBearerDefaults.AuthenticationScheme);
+            policy.RequireAuthenticatedUser();
+        });
+        options.DefaultPolicy = options.GetPolicy( jwtSettings.PolicyName);
+        options.FallbackPolicy = options.DefaultPolicy;
+    });
+}
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
