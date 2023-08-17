@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Net.Http.Headers;
+using System.Text;
 
 string[] filepaths = null;
 string url = string.Empty;
@@ -42,11 +43,11 @@ for (int i = 0; i < args.Length; i++)
         }
     }
     else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase)
-        || string.Equals(args[i], "--help", StringComparison.InvariantCultureIgnoreCase)
-        || string.Equals(args[i], "-h", StringComparison.InvariantCultureIgnoreCase)
-        || string.Equals(args[i], "--h", StringComparison.InvariantCultureIgnoreCase)
-        || string.Equals(args[i], "/?", StringComparison.InvariantCultureIgnoreCase)
-        )
+             || string.Equals(args[i], "--help", StringComparison.InvariantCultureIgnoreCase)
+             || string.Equals(args[i], "-h", StringComparison.InvariantCultureIgnoreCase)
+             || string.Equals(args[i], "--h", StringComparison.InvariantCultureIgnoreCase)
+             || string.Equals(args[i], "/?", StringComparison.InvariantCultureIgnoreCase)
+            )
     {
         PrintHelp();
     }
@@ -65,6 +66,7 @@ if (string.IsNullOrWhiteSpace(url))
     PrintHelp();
     System.Environment.Exit(-1);
 }
+
 if (string.IsNullOrWhiteSpace(token))
 {
     Console.WriteLine("-token must be set");
@@ -80,6 +82,10 @@ try
         BaseAddress = new(url),
         Timeout = TimeSpan.FromMilliseconds(timeoutInMs)
     };
+    if (!string.IsNullOrWhiteSpace(token))
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    }
 
     bool failures = false;
     foreach (var filepath in filepaths)
@@ -117,10 +123,12 @@ void PrintHelp()
     Console.WriteLine("    Timeout is in ms.  Defaults to 10000.");
     Console.WriteLine("");
     Console.WriteLine("Example");
-    Console.WriteLine(".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
+    Console.WriteLine(
+        ".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
 }
 
-static async Task<bool> CallSigningService(string url, bool quickFail, bool ignoreFailures, HttpClient client, bool failures, string filepath)
+static async Task<bool> CallSigningService(string url, bool quickFail, bool ignoreFailures, HttpClient client,
+    bool failures, string filepath)
 {
     try
     {
