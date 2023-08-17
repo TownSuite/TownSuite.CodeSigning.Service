@@ -7,7 +7,7 @@ using System.Text;
 using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
-
+builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<Settings>(s => builder.Configuration.GetSection("Settings").Get<Settings>());
 builder.WebHost.UseKestrel(o =>
 {
@@ -65,6 +65,7 @@ static string GetTempFolder()
     return Path.Combine(Path.GetTempPath(), "townsuite", "codesigning");
 }
 
+app.MapHealthChecks("/healthz");
 app.Run();
 
 static void Cleanup(string workingFilePath)
