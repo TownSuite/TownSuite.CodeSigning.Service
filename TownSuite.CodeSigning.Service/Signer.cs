@@ -1,6 +1,7 @@
 ﻿using Microsoft.VisualBasic;
 using System.Diagnostics;
 using System.Text;
+using System.Threading;
 
 namespace TownSuite.CodeSigning.Service
 {
@@ -14,6 +15,7 @@ namespace TownSuite.CodeSigning.Service
             _settings = settings;
         }
 
+        private CancellationToken _cancellationToken => new CancellationTokenSource(_settings.SigntoolTimeoutInMs).Token;
         public void Dispose()
         {
             if(p == null)
@@ -25,7 +27,7 @@ namespace TownSuite.CodeSigning.Service
             p.Dispose();
         }
 
-        public (bool IsSigned, string Message) Sign(string currentfile)
+        public async Task<(bool IsSigned, string Message)> SignAsync(string currentfile)
         {
             p = new System.Diagnostics.Process();
             p.StartInfo.FileName = _settings.SignToolPath;
@@ -46,7 +48,9 @@ namespace TownSuite.CodeSigning.Service
             p.BeginErrorReadLine();
             p.BeginOutputReadLine();
 
-            if (!p.WaitForExit(_settings.SigntoolTimeoutInMs))
+
+            await p.WaitForExitAsync(_cancellationToken);
+            if (_cancellationToken.IsCancellationRequested)
             {
                 msg.AppendLine("signtool timeout reached. Cancelling code signing attempt.");
                 Console.WriteLine(msg.ToString());
@@ -61,6 +65,7 @@ namespace TownSuite.CodeSigning.Service
 
                 return (false, msg.ToString());
             }
+
             Console.WriteLine(msg.ToString());
             return (p.ExitCode == 0, msg.ToString());
 
@@ -81,5 +86,6 @@ namespace TownSuite.CodeSigning.Service
                 msg.AppendLine($"SignToolInternal StandardOutput: {e.Data}");
             }
         }
+
     }
 }

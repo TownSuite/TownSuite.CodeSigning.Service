@@ -70,7 +70,7 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
         }
 
         using var signer = new Signer(settings);
-        var results = signer.Sign(workingFilePath);
+        var results = await signer.SignAsync(workingFilePath);
 
         if (results.IsSigned)
         {
