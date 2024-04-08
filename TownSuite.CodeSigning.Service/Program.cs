@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using System.Threading;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
@@ -39,7 +40,7 @@ if (jwtSettings != null && !string.IsNullOrWhiteSpace(jwtSettings.Secret) &&
             policy.AuthenticationSchemes.Add(JwtBearerDefaults.AuthenticationScheme);
             policy.RequireAuthenticatedUser();
         });
-        options.DefaultPolicy = options.GetPolicy( jwtSettings.PolicyName);
+        options.DefaultPolicy = options.GetPolicy(jwtSettings.PolicyName);
         options.FallbackPolicy = options.DefaultPolicy;
     });
 }
@@ -63,17 +64,18 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
     string workingFilePath = Path.Combine(GetTempFolder(), Guid.NewGuid().ToString());
     try
     {
-        using (var memoryStream = new MemoryStream())
+        await using (var fileStream = new FileStream(workingFilePath, FileMode.Create))
         {
-            await request.Body.CopyToAsync(memoryStream);
-            await File.WriteAllBytesAsync(workingFilePath, memoryStream.ToArray());
+            await request.Body.CopyToAsync(fileStream);
         }
 
         using var signer = new Signer(settings);
+        await Queuing.semaphore.WaitAsync();
         var results = await signer.SignAsync(workingFilePath);
 
         if (results.IsSigned)
         {
+            // do not change to a filestream, as the filestream will be disposed before the file is returned
             var file = await File.ReadAllBytesAsync(workingFilePath);
             return Results.File(file);
         }
@@ -86,6 +88,7 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
     }
     finally
     {
+        Queuing.semaphore.Release(); 
         Cleanup(workingFilePath);
     }
 });
@@ -128,4 +131,10 @@ static void InitializeWorkingFolder(string workingfolder)
     {
         Directory.CreateDirectory(workingfolder);
     }
+}
+
+static class Queuing
+{
+    // Allows concurrent operations up to the number of CPU cores
+    public static SemaphoreSlim semaphore = new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount);
 }
