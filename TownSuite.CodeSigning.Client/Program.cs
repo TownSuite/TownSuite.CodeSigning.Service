@@ -1,15 +1,17 @@
 ﻿using System.Collections.Concurrent;
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Text;
+using TownSuite.CodeSigning.Client;
 
 string[] filepaths = null;
 string folder = string.Empty;
 string url = string.Empty;
+string baseurl = string.Empty;
 string token = string.Empty;
 bool quickFail = false;
 bool ignoreFailures = false;
 int timeoutInMs = 10000;
-int concurrent = 1;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -25,6 +27,10 @@ for (int i = 0; i < args.Length; i++)
     {
         url = args[i + 1];
     }
+    else if (string.Equals(args[i], "-baseurl", StringComparison.InvariantCultureIgnoreCase))
+    {
+        baseurl = args[i + 1];
+    }
     else if (string.Equals(args[i], "-token", StringComparison.InvariantCultureIgnoreCase))
     {
         token = args[i + 1];
@@ -32,7 +38,7 @@ for (int i = 0; i < args.Length; i++)
     else if (string.Equals(args[i], "-tokenfile", StringComparison.InvariantCultureIgnoreCase))
     {
         string tokenFile = args[i + 1];
-        token = System.IO.File.ReadAllText(tokenFile);
+        token = await System.IO.File.ReadAllTextAsync(tokenFile);
     }
     else if (string.Equals(args[i], "-quickfail", StringComparison.InvariantCultureIgnoreCase))
     {
@@ -49,13 +55,6 @@ for (int i = 0; i < args.Length; i++)
             Console.WriteLine($"-timeout value failed to parse.  defaulting to {timeoutInMs}");
         }
     }
-    else if (string.Equals(args[i], "-concurrent", StringComparison.InvariantCultureIgnoreCase))
-    {
-        if (!int.TryParse(args[i + 1], out concurrent))
-        {
-            Console.WriteLine($"-concurrent value failed to parse.  defaulting to {concurrent}");
-        }
-    }
     else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase)
              || string.Equals(args[i], "--help", StringComparison.InvariantCultureIgnoreCase)
              || string.Equals(args[i], "-h", StringComparison.InvariantCultureIgnoreCase)
@@ -66,6 +65,12 @@ for (int i = 0; i < args.Length; i++)
         PrintHelp();
     }
 }
+
+if (string.IsNullOrWhiteSpace(baseurl))
+{
+    baseurl = url;
+}
+
 
 if (filepaths == null || filepaths.Length == 0)
 {
@@ -103,14 +108,8 @@ if (!string.IsNullOrWhiteSpace(token))
 
 try
 {
-    bool signingServiceIsOnline = await HealthCheck(url);
-    if (!signingServiceIsOnline)
-    {
-        Environment.Exit(-1);
-    }
-
     bool failures = false;
-    failures = await ProcessFiles(filepaths, url, quickFail, ignoreFailures, concurrent);
+    failures = await ProcessFiles(filepaths, url, quickFail, ignoreFailures);
 
     if (failures && !ignoreFailures)
     {
@@ -147,8 +146,9 @@ void PrintHelp()
     Console.WriteLine("-timeout \"10000\"");
     Console.WriteLine("    Timeout is in ms.  Defaults to 10000.");
     Console.WriteLine("");
-    Console.WriteLine("-concurrent \"4\"");
-    Console.WriteLine("    How many files to process concurrently.  Defaults to 1.");
+    Console.WriteLine("-poll");
+    Console.WriteLine("    Poll the server for the status of the file.");
+    Console.WriteLine("    If the file is ready it is downloaded, otherwise poll every second for 240 seconds.");
     Console.WriteLine("");
     Console.WriteLine("Example");
     Console.WriteLine(
@@ -156,7 +156,7 @@ void PrintHelp()
 }
 
 
-async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bool ignoreFailures, int concurrentt)
+async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bool ignoreFailures)
 {
     var files = new List<string>();
     if (!string.IsNullOrWhiteSpace(folder))
@@ -196,103 +196,38 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
 
     }
 
-    var tasks = new ConcurrentBag<Task<bool>>();
-    bool failures = false;
-    int count = 0;
-    foreach (var filepath in files)
+
+    var signer = new SigningClient(client, url);
+
+    bool signingServiceIsOnline = await signer.HealthCheck();
+    if (!signingServiceIsOnline)
     {
-        tasks.Add(CallSigningService(url, quickFail, ignoreFailures, filepath));
-        count = count + 1;
-        if (count % concurrent == 0)
-        {
-            bool fail = (await Task.WhenAll(tasks)).Any(p => p == true);
-            if (fail) failures = true;
-            tasks.Clear();
-        }
+        Environment.Exit(-1);
     }
 
-    if (tasks.Count > 0)
+    var uploadFailures = await signer.UploadFiles(quickFail, ignoreFailures, filepaths);
+    if (uploadFailures.Length > 0)
     {
-        bool fail = (await Task.WhenAll(tasks)).Any(p => p == true);
-        if (fail) failures = true;
-    }
-
-    return failures;
-}
-
-async Task<bool> HealthCheck(string url)
-{
-    try
-    {
-        var urk = new Uri(url);
-        string healthCheckUrl = $"{urk.Scheme}://{urk.Host}:{urk.Port}/healthz";
-
-        var response = await client.GetAsync(healthCheckUrl);
-        if (response.IsSuccessStatusCode)
+        foreach (var result in uploadFailures)
         {
-            return true;
+            Console.WriteLine($"Failed to sign file: {result.FailedFile}");
+            Console.WriteLine(result.Message);
         }
-        else
-        {
-            Console.WriteLine("Health check failed");
-            var failedOutput = await response.Content.ReadAsStringAsync();
-            Console.WriteLine(failedOutput);
-            return false;
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine("Health check failed" + ex.Message);
         return false;
     }
 
+    var downloadResults = await signer.DownloadSignedFiles(quickFail, ignoreFailures);
+    if (downloadResults.Length > 0)
+    {
+        foreach (var result in downloadResults)
+        {
+            Console.WriteLine($"Failed to download file: {result.FailedFile}");
+            Console.WriteLine(result.Message);
+        }
+        return false;
+    }
+
+    return true;
 }
 
 
-async Task<bool> CallSigningService(string url, bool quickFail, bool ignoreFailures,
-    string filepath)
-{
-    bool failures = false;
-    try
-    {
-        var isHealthy = await HealthCheck(url);
-        if (!isHealthy)
-        {
-            return false;
-        }
-
-        var request = new HttpRequestMessage(HttpMethod.Post, url);
-        using var fs = File.OpenRead(filepath);
-        request.Content = new StreamContent(fs);
-        var response = await client.SendAsync(request);
-        fs.Close();
-        if (response.IsSuccessStatusCode)
-        {
-            using var resultStream = await response.Content.ReadAsStreamAsync();
-            using var memoryStream = new MemoryStream();
-            await resultStream.CopyToAsync(memoryStream);
-            await File.WriteAllBytesAsync(filepath, memoryStream.ToArray());
-            Console.WriteLine($"Signed file: {filepath}");
-        }
-        else
-        {
-            failures = true;
-            Console.WriteLine($"Failed to sign file: {filepath}");
-            var failedOutput = await response.Content.ReadAsStringAsync();
-            Console.WriteLine(failedOutput);
-
-            if (quickFail && !ignoreFailures)
-            {
-                Console.WriteLine("Quick fail");
-                Environment.Exit(-1);
-            }
-        }
-    }
-    catch (Exception)
-    {
-        Console.WriteLine($"Failed to sign file: {filepath}");
-        throw;
-    }
-
-    return failures;
-}
