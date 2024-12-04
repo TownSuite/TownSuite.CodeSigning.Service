@@ -63,22 +63,22 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
 {
     // Obsolete, only kept in place for backwards compatibility
 
-    string workingFilePath = Path.Combine(GetTempFolder(), Guid.NewGuid().ToString());
+    var workingFilePath = new FileInfo(Path.Combine(GetTempFolder(), Guid.NewGuid().ToString()));
     try
     {
-        await using (var fileStream = new FileStream(workingFilePath, FileMode.Create))
+        await using (var fileStream = new FileStream(workingFilePath.FullName, FileMode.Create))
         {
             await request.Body.CopyToAsync(fileStream);
         }
 
         using var signer = new Signer(settings);
         await Queuing.semaphore.WaitAsync();
-        var results = await signer.SignAsync(workingFilePath);
+        var results = await signer.SignAsync(workingFilePath.FullName);
 
         if (results.IsSigned)
         {
             // do not change to a filestream, as the filestream will be disposed before the file is returned
-            var file = await File.ReadAllBytesAsync(workingFilePath);
+            var file = await File.ReadAllBytesAsync(workingFilePath.FullName);
             return Results.File(file);
         }
         return Results.Problem(title: "Failure to sign", detail: results.Message, statusCode: 500);
@@ -98,13 +98,13 @@ app.MapPost("/sign/batch", async (HttpRequest request, Settings settings) =>
 {
     string id = Guid.NewGuid().ToString();
 
-    string workingFolder = Path.Combine(GetTempFolder(), id);
-    string workingFilePath = System.IO.Path.Combine(workingFolder, $"{id}.workingfile");
+    var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), id));
+    string workingFilePath = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
     try
     {
-        if (!System.IO.Directory.Exists(workingFolder))
+        if (!workingFolder.Exists)
         {
-            System.IO.Directory.CreateDirectory(workingFolder);
+            workingFolder.Create();
         }
 
         await using (var fileStream = new FileStream(workingFilePath, FileMode.Create))
@@ -122,16 +122,18 @@ app.MapPost("/sign/batch", async (HttpRequest request, Settings settings) =>
 
                 if (results.IsSigned)
                 {
-                    await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder, $"{id}.signed"), "true");
+                    await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed"), "true");
                 }
                 else
                 {
-                    await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder, $"{id}.error"), results.Message);
+                    await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), results.Message);
                 }
             }
             catch (Exception ex)
             {
+                await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), ex.Message);
                 Console.Error.WriteLine($"Failed to sign file {workingFilePath}");
+                CleanupDir(workingFolder);
             }
             finally
             {
@@ -150,23 +152,23 @@ app.MapPost("/sign/batch", async (HttpRequest request, Settings settings) =>
 
 app.MapGet("/sign/batch", async (string id) =>
 {
-    string workingFolder = Path.Combine(GetTempFolder(), id);
+    var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), id));
 
-    if (!System.IO.Directory.Exists(workingFolder))
+    if (!workingFolder.Exists)
     {
         return Results.Problem(title: "Not Found", detail: "The id was not found", statusCode: 404);
     }
 
-    if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder, $"{id}.signed")))
+    if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed")))
     {
-        var file = await File.ReadAllBytesAsync(System.IO.Path.Combine(workingFolder, $"{id}.workingfile"));
-        Cleanup(workingFolder);
+        var file = await File.ReadAllBytesAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile"));
+        CleanupDir(workingFolder);
         return Results.File(file);
     }
 
-    if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder, $"{id}.error")))
+    if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error")))
     {
-        return Results.Problem(title: "Failure to sign", detail: await File.ReadAllTextAsync(System.IO.Path.Combine(workingFolder, $"{id}.error")), statusCode: 500);
+        return Results.Problem(title: "Failure to sign", detail: await File.ReadAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error")), statusCode: 500);
     }
 
     return Results.Problem(title: "Not Signed", detail: "The file has not been signed yet", statusCode: 425);
@@ -180,17 +182,30 @@ static string GetTempFolder()
 app.MapHealthChecks("/healthz");
 app.Run();
 
-static void Cleanup(string workingFilePath)
+static void Cleanup(FileInfo workingFilePath)
 {
     try
     {
-        File.Delete(workingFilePath);
+        workingFilePath.Delete();
     }
     catch
     {
         Console.WriteLine($"failed to cleanup file {workingFilePath}");
     }
 }
+
+static void CleanupDir(DirectoryInfo dir)
+{
+    try
+    {
+        dir.Delete(true);
+    }
+    catch
+    {
+        Console.WriteLine($"failed to cleanup dir {dir}");
+    }
+}
+
 
 static void InitializeWorkingFolder(string workingfolder)
 {
