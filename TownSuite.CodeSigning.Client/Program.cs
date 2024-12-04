@@ -12,6 +12,7 @@ string token = string.Empty;
 bool quickFail = false;
 bool ignoreFailures = false;
 int timeoutInMs = 10000;
+int batchTimeoutInSeconds = 1200;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -53,6 +54,13 @@ for (int i = 0; i < args.Length; i++)
         if (!int.TryParse(args[i + 1], out timeoutInMs))
         {
             Console.WriteLine($"-timeout value failed to parse.  defaulting to {timeoutInMs}");
+        }
+    }
+    else if (string.Equals(args[i], "-batchtimeout", StringComparison.InvariantCultureIgnoreCase))
+    {
+        if (!int.TryParse(args[i + 1], out batchTimeoutInSeconds))
+        {
+            Console.WriteLine($"-batchtimeout value failed to parse.  defaulting to {batchTimeoutInSeconds}");
         }
     }
     else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase)
@@ -144,11 +152,11 @@ void PrintHelp()
     Console.WriteLine("-quickfail if this is set the program will exit on the first faliure.");
     Console.WriteLine("-ignorefailures if this is set the program will ignore all errors and override quickfail.");
     Console.WriteLine("-timeout \"10000\"");
-    Console.WriteLine("    Timeout is in ms.  Defaults to 10000.");
+    Console.WriteLine("    Timeout is in ms.  Defaults to 10000.   This is per http request.");
     Console.WriteLine("");
-    Console.WriteLine("-poll");
-    Console.WriteLine("    Poll the server for the status of the file.");
-    Console.WriteLine("    If the file is ready it is downloaded, otherwise poll every second for 240 seconds.");
+    Console.WriteLine("-batchtimeout");
+    Console.WriteLine("    The total time permitted for the whole batch");
+    Console.WriteLine("    If not set the default is 1200 seconds.");
     Console.WriteLine("");
     Console.WriteLine("Example");
     Console.WriteLine(
@@ -216,7 +224,7 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
         return false;
     }
 
-    var downloadResults = await signer.DownloadSignedFiles(quickFail, ignoreFailures);
+    var downloadResults = await signer.DownloadSignedFiles(quickFail, ignoreFailures, batchTimeoutInSeconds);
     if (downloadResults.Length > 0)
     {
         foreach (var result in downloadResults)

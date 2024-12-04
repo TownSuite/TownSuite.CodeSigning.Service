@@ -76,14 +76,17 @@ namespace TownSuite.CodeSigning.Client
             return failedUploads.ToArray();
         }
 
-        public async Task<(string FailedFile, string Message)[]> DownloadSignedFiles(bool quickFail, bool ignoreFailures)
+        public async Task<(string FailedFile, string Message)[]> DownloadSignedFiles(bool quickFail, bool ignoreFailures,
+            int batchTimeoutInSeconds)
         {
             var startTime = DateTime.UtcNow;
             var failedUploads = new List<(string FailedFile, string Message)>();
 
-            while ((DateTime.UtcNow - startTime).TotalSeconds < 300 && TrackedFiles.Any())
+            int count = 0;
+            while ((DateTime.UtcNow - startTime).TotalSeconds < batchTimeoutInSeconds
+                && TrackedFiles.Any())
             {
-                var results = await DownloadSignedFiles_Internal(quickFail, ignoreFailures);
+                var results = await DownloadSignedFiles_Internal(quickFail, ignoreFailures, count % 60 == 0);
                failedUploads.AddRange(results.Failures);
 
                 // Remove successfully processed files from TrackedFiles
@@ -96,13 +99,14 @@ namespace TownSuite.CodeSigning.Client
                     TrackedFiles.Remove(TrackedFiles.First(x => x.FilePath == file.FailedFile));
                 }
                 await Task.Delay(1000);
+                count++;
             }
 
             return failedUploads.ToArray();
         }
 
         public async Task<((string FailedFile, string Message)[] Failures, (string Id, string FilePath)[] GoodFiles)>
-            DownloadSignedFiles_Internal(bool quickFail, bool ignoreFailures)
+            DownloadSignedFiles_Internal(bool quickFail, bool ignoreFailures, bool showPollingMessage)
         {
             var urk = new Uri(_url);
             string url = $"{urk.Scheme}://{urk.Host}:{urk.Port}/sign/batch";
@@ -112,7 +116,11 @@ namespace TownSuite.CodeSigning.Client
             foreach (var file in TrackedFiles)
             {
                 string pollUrl = $"{url}?id={file.Id}";
-                Console.WriteLine($"Polling download for file {file.FilePath}");
+                if (showPollingMessage)
+                {
+                    Console.WriteLine($"Polling download for file {file.FilePath}");
+                }
+
                 var response = await _client.GetAsync(pollUrl);
                 if (response.IsSuccessStatusCode)
                 {
