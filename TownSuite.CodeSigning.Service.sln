@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TownSuite.CodeSigning.Servi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TownSuite.CodeSigning.Client", "TownSuite.CodeSigning.Client\TownSuite.CodeSigning.Client.csproj", "{FFC09649-E0F4-4343-9D57-5EE93C7C939F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TownSuite.CodeSigning.Tests", "TownSuite.CodeSigning.Tests\TownSuite.CodeSigning.Tests.csproj", "{6C85DC6E-4682-47D5-B2F6-B1B661650E59}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{FFC09649-E0F4-4343-9D57-5EE93C7C939F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FFC09649-E0F4-4343-9D57-5EE93C7C939F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FFC09649-E0F4-4343-9D57-5EE93C7C939F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6C85DC6E-4682-47D5-B2F6-B1B661650E59}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6C85DC6E-4682-47D5-B2F6-B1B661650E59}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6C85DC6E-4682-47D5-B2F6-B1B661650E59}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6C85DC6E-4682-47D5-B2F6-B1B661650E59}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

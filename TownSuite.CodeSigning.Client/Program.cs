@@ -205,7 +205,7 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
         Environment.Exit(-1);
     }
 
-    var uploadFailures = await signer.UploadFiles(quickFail, ignoreFailures, filepaths);
+    var uploadFailures = await signer.UploadFiles(quickFail, ignoreFailures, files.ToArray());
     if (uploadFailures.Length > 0)
     {
         foreach (var result in uploadFailures)

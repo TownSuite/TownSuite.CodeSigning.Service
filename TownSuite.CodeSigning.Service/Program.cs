@@ -6,6 +6,8 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading;
+using System.Reflection;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
@@ -45,25 +47,29 @@ if (jwtSettings != null && !string.IsNullOrWhiteSpace(jwtSettings.Secret) &&
     });
 }
 
+LogSetup(builder);
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 
 app.UseHttpsRedirection();
 
-string workingfolder = GetTempFolder();
-InitializeWorkingFolder(workingfolder);
+var log = app.Services.GetService<ILogger>();
+
+string workingfolder = BatchedSigning.GetTempFolder();
+InitializeWorkingFolder(workingfolder, log);
 
 app.UseExceptionHandler(exceptionHandlerApp
     => exceptionHandlerApp.Run(async context
         => await Results.Problem()
                      .ExecuteAsync(context)));
 
-app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
+app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logger) =>
 {
     // Obsolete, only kept in place for backwards compatibility
 
-    var workingFilePath = new FileInfo(Path.Combine(GetTempFolder(), Guid.NewGuid().ToString()));
+    var workingFilePath = new FileInfo(Path.Combine(BatchedSigning.GetTempFolder(), Guid.NewGuid().ToString()));
     try
     {
         await using (var fileStream = new FileStream(workingFilePath.FullName, FileMode.Create))
@@ -71,7 +77,7 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
             await request.Body.CopyToAsync(fileStream);
         }
 
-        using var signer = new Signer(settings);
+        using var signer = new Signer(settings, logger);
         await Queuing.semaphore.WaitAsync();
         var results = await signer.SignAsync(workingFilePath.FullName);
 
@@ -85,129 +91,43 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings) =>
     }
     catch (Exception ex)
     {
-        Console.WriteLine(ex);
+        logger.LogError(ex, "/sign failure");
         return Results.Problem(title: "Failure to sign", detail: ex.Message ?? "", statusCode: 500);
     }
     finally
     {
         Queuing.semaphore.Release();
-        Cleanup(workingFilePath);
+        Cleanup(workingFilePath, logger);
     }
 });
-app.MapPost("/sign/batch", async (HttpRequest request, Settings settings) =>
+app.MapPost("/sign/batch", async (HttpRequest request, Settings settings, ILogger logger) =>
 {
-    string id = Guid.NewGuid().ToString();
-
-    var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), id));
-    string workingFilePath = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
-    try
-    {
-        if (!workingFolder.Exists)
-        {
-            workingFolder.Create();
-        }
-
-        await using (var fileStream = new FileStream(workingFilePath, FileMode.Create))
-        {
-            await request.Body.CopyToAsync(fileStream);
-        }
-
-        BackgroundQueue.Instance.QueueThread(async () =>
-        {
-            try
-            {
-                using var signer = new Signer(settings);
-                await Queuing.semaphore.WaitAsync();
-                var results = await signer.SignAsync(workingFilePath);
-
-                if (results.IsSigned)
-                {
-                    await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed"), "true");
-                }
-                else
-                {
-                    await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), results.Message);
-                }
-            }
-            catch (Exception ex)
-            {
-                await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), ex.Message);
-                Console.Error.WriteLine($"Failed to sign file {workingFilePath}");
-                CleanupDir(workingFolder);
-            }
-            finally
-            {
-                Queuing.semaphore.Release();
-            }
-        });
-
-        return Results.Ok(id);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine(ex);
-        return Results.Problem(title: "Failure accept", detail: ex.Message ?? "", statusCode: 500);
-    }
+    return await BatchedSigning.Sign(request.Body, settings, logger);
 });
 
-app.MapGet("/sign/batch", async (string id) =>
+app.MapGet("/sign/batch", async (ILogger logger, string id) =>
 {
-    var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), id));
-
-    if (!workingFolder.Exists)
-    {
-        return Results.Problem(title: "Not Found", detail: "The id was not found", statusCode: 404);
-    }
-
-    if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed")))
-    {
-        var file = await File.ReadAllBytesAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile"));
-        CleanupDir(workingFolder);
-        return Results.File(file);
-    }
-
-    if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error")))
-    {
-        return Results.Problem(title: "Failure to sign", detail: await File.ReadAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error")), statusCode: 500);
-    }
-
-    return Results.Problem(title: "Not Signed", detail: "The file has not been signed yet", statusCode: 425);
+    return await BatchedSigning.Get(id, logger);
 });
 
-static string GetTempFolder()
-{
-    return Path.Combine(Path.GetTempPath(), "townsuite", "codesigning");
-}
 
 app.MapHealthChecks("/healthz");
 app.Run();
 
-static void Cleanup(FileInfo workingFilePath)
+static void Cleanup(FileInfo workingFilePath, ILogger logger)
 {
     try
     {
         workingFilePath.Delete();
     }
-    catch
+    catch(Exception ex)
     {
-        Console.WriteLine($"failed to cleanup file {workingFilePath}");
-    }
-}
-
-static void CleanupDir(DirectoryInfo dir)
-{
-    try
-    {
-        dir.Delete(true);
-    }
-    catch
-    {
-        Console.WriteLine($"failed to cleanup dir {dir}");
+        logger.LogError(ex, $"failed to cleanup file {workingFilePath}");
     }
 }
 
 
-static void InitializeWorkingFolder(string workingfolder)
+static void InitializeWorkingFolder(string workingfolder, ILogger logger)
 {
     try
     {
@@ -216,9 +136,9 @@ static void InitializeWorkingFolder(string workingfolder)
             Directory.Delete(workingfolder, true);
         }
     }
-    catch (Exception)
+    catch (Exception ex)
     {
-        Console.WriteLine("InitializeWorkingFolder failed to delete the old working folder");
+        logger.LogError(ex, "InitializeWorkingFolder failed to delete the old working folder");
     }
 
     if (!Directory.Exists(workingfolder))
@@ -227,8 +147,55 @@ static void InitializeWorkingFolder(string workingfolder)
     }
 }
 
-static class Queuing
+static void LogSetup(WebApplicationBuilder builder)
 {
-    // Allows concurrent operations up to the number of CPU cores
-    public static SemaphoreSlim semaphore = new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount);
+    string externalLogAssemblyPath = builder.Configuration.GetSection("ExternalLogsAssemblyFilePath").Value;
+    string logFile = builder.Configuration.GetSection("LogFile").Value;
+    if (!string.IsNullOrWhiteSpace(externalLogAssemblyPath))
+    {
+        string className = builder.Configuration.GetSection("ExternalLogsAssemblyClassName").Value;
+        string functionName = builder.Configuration.GetSection("ExternalLogsAssemblyFunctionName").Value;
+
+        AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
+
+        var assembly = Assembly.LoadFrom(externalLogAssemblyPath);
+        var externalLogsHelperType = assembly.GetType(className);
+        var addLoggerMethod = externalLogsHelperType.GetMethod(functionName, BindingFlags.Static | BindingFlags.Public);
+
+        builder.Services.AddLogging(configure =>
+        {
+            configure.ClearProviders();
+
+            addLoggerMethod.Invoke(null, new object[] { configure, builder.Configuration });
+
+        })
+       .Configure<LoggerFilterOptions>(options =>
+       {
+           options.MinLevel = Microsoft.Extensions.Logging.LogLevel.Information;
+       });
+    }
+    else
+    {
+        builder.Services.AddLogging(configure =>
+        {
+            configure.ClearProviders();
+            configure.AddConsole();
+        })
+        .Configure<LoggerFilterOptions>(options => options.MinLevel = Microsoft.Extensions.Logging.LogLevel.Information);
+    }
+
+    builder.Services.AddSingleton<Microsoft.Extensions.Logging.ILogger>(s =>
+    {
+        return s.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("TownSuite");
+    });
+}
+
+static Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
+{
+    string assemblyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, args.Name.Split(',')[0] + ".dll");
+    if (File.Exists(assemblyPath))
+    {
+        return Assembly.LoadFrom(assemblyPath);
+    }
+    return null;
 }

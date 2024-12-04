@@ -44,12 +44,13 @@ namespace TownSuite.CodeSigning.Client
                     var request = new HttpRequestMessage(HttpMethod.Post, url);
                     using var fs = File.OpenRead(filepath);
                     request.Content = new StreamContent(fs);
+                    Console.WriteLine($"Uploading file: {filepath}");
                     var response = await _client.SendAsync(request);
                     fs.Close();
                     if (response.IsSuccessStatusCode)
                     {
                         string id = await response.Content.ReadAsStringAsync();
-                        TrackedFiles.Add((id, filepath));
+                        TrackedFiles.Add((id.Replace("\"", ""), filepath));
                     }
                     else
                     {
@@ -90,6 +91,10 @@ namespace TownSuite.CodeSigning.Client
                 {
                     TrackedFiles.Remove(file);
                 }
+                foreach (var file in results.Failures)
+                {
+                    TrackedFiles.Remove(TrackedFiles.First(x => x.FilePath == file.FailedFile));
+                }
                 await Task.Delay(1000);
             }
 
@@ -107,6 +112,7 @@ namespace TownSuite.CodeSigning.Client
             foreach (var file in TrackedFiles)
             {
                 string pollUrl = $"{url}?id={file.Id}";
+                Console.WriteLine($"Polling download for file {file.FilePath}");
                 var response = await _client.GetAsync(pollUrl);
                 if (response.IsSuccessStatusCode)
                 {

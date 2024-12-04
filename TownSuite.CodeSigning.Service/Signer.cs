@@ -10,15 +10,17 @@ namespace TownSuite.CodeSigning.Service
         readonly Settings _settings;
         StringBuilder msg = new StringBuilder();
         Process p;
-        public Signer(Settings settings)
+        readonly ILogger _logger;
+        public Signer(Settings settings, ILogger logger)
         {
             _settings = settings;
+            _logger = logger;
         }
 
         private CancellationToken _cancellationToken => new CancellationTokenSource(_settings.SigntoolTimeoutInMs).Token;
         public void Dispose()
         {
-            if(p == null)
+            if (p == null)
             {
                 return;
             }
@@ -53,22 +55,21 @@ namespace TownSuite.CodeSigning.Service
             if (_cancellationToken.IsCancellationRequested)
             {
                 msg.AppendLine("signtool timeout reached. Cancelling code signing attempt.");
-                Console.WriteLine(msg.ToString());
+                _logger.LogWarning(msg.ToString());
                 try
                 {
                     p.Kill();
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
-                    Console.WriteLine(ex);
+                    _logger.LogWarning(ex, "signtool process exit failure");
                 }
 
                 return (false, msg.ToString());
             }
 
-            Console.WriteLine(msg.ToString());
+            _logger.LogInformation($"SignToolInternal ExitCode: {p.ExitCode}, Message: {msg.ToString()}");
             return (p.ExitCode == 0, msg.ToString());
-
         }
 
         private void process_ErrorDataReceived(object sender, DataReceivedEventArgs e)
