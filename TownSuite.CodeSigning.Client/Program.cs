@@ -180,7 +180,11 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
             }
             else
             {
-                files.Add(Path.Combine(folder, file));
+                string fullFilePath = Path.Combine(folder, file);
+                if (System.IO.File.Exists(fullFilePath))
+                {
+                    files.Add(fullFilePath);
+                }
             }
         }
     }
@@ -198,12 +202,13 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
             }
             else
             {
-                files.Add(file);
+                if (System.IO.File.Exists(file))
+                {
+                    files.Add(file);
+                }
             }
         }
-
     }
-
 
     var signer = new SigningClient(client, url);
 
