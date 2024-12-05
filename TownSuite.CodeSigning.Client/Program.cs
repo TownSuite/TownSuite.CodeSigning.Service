@@ -121,7 +121,7 @@ try
 
     if (failures && !ignoreFailures)
     {
-        Environment.Exit(-1);
+        Environment.Exit(-3);
     }
 }
 catch (Exception ex)
@@ -215,7 +215,7 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
     bool signingServiceIsOnline = await signer.HealthCheck();
     if (!signingServiceIsOnline)
     {
-        Environment.Exit(-1);
+        Environment.Exit(-2);
     }
 
     var uploadFailures = await signer.UploadFiles(quickFail, ignoreFailures, files.ToArray());
@@ -226,7 +226,7 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
             Console.WriteLine($"Failed to sign file: {result.FailedFile}");
             Console.WriteLine(result.Message);
         }
-        return false;
+        return true;
     }
 
     var downloadResults = await signer.DownloadSignedFiles(quickFail, ignoreFailures, batchTimeoutInSeconds);
@@ -237,10 +237,10 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
             Console.WriteLine($"Failed to download file: {result.FailedFile}");
             Console.WriteLine(result.Message);
         }
-        return false;
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 

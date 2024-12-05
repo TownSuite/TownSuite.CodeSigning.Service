@@ -87,7 +87,7 @@ namespace TownSuite.CodeSigning.Client
                 && TrackedFiles.Any())
             {
                 var results = await DownloadSignedFiles_Internal(quickFail, ignoreFailures, count % 60 == 0);
-               failedUploads.AddRange(results.Failures);
+                failedUploads.AddRange(results.Failures);
 
                 // Remove successfully processed files from TrackedFiles
                 foreach (var file in results.GoodFiles)
