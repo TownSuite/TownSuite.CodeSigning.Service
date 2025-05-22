@@ -79,9 +79,9 @@ namespace TownSuite.CodeSigning.Service
 
             if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed")))
             {
-                var file = await File.ReadAllBytesAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile"));
-                CleanupDir(workingFolder, logger);
-                return Results.File(file);
+                var workingFile = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
+                var fileStream = new TempFileStream(workingFile, workingFolder);
+                return Results.Stream(fileStream);
             }
 
             if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error")))
@@ -91,7 +91,6 @@ namespace TownSuite.CodeSigning.Service
 
             return Results.Problem(title: "Not Signed", detail: "The file has not been signed yet", statusCode: 425);
         }
-
 
         static void CleanupDir(DirectoryInfo dir, ILogger logger)
         {
@@ -104,7 +103,5 @@ namespace TownSuite.CodeSigning.Service
                 logger.LogError(ex, $"failed to cleanup dir {dir}");
             }
         }
-
     }
-
 }
