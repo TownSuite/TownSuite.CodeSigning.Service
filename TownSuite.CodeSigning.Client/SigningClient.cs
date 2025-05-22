@@ -42,7 +42,7 @@ namespace TownSuite.CodeSigning.Client
 
 
                     var request = new HttpRequestMessage(HttpMethod.Post, url);
-                    using var fs = File.OpenRead(filepath);
+                    await using var fs = File.OpenRead(filepath);
                     request.Content = new StreamContent(fs);
                     Console.WriteLine($"Uploading file: {filepath}");
                     var response = await _client.SendAsync(request);
@@ -124,10 +124,9 @@ namespace TownSuite.CodeSigning.Client
                 var response = await _client.GetAsync(pollUrl);
                 if (response.IsSuccessStatusCode)
                 {
-                    using var resultStream = await response.Content.ReadAsStreamAsync();
-                    using var memoryStream = new MemoryStream();
-                    await resultStream.CopyToAsync(memoryStream);
-                    await File.WriteAllBytesAsync(file.FilePath, memoryStream.ToArray());
+                    await using var resultStream = await response.Content.ReadAsStreamAsync();
+                    await using var fileStream = File.OpenWrite(file.FilePath);
+                    await resultStream.CopyToAsync(fileStream);
                     goodFiles.Add(file);
                     Console.WriteLine($"Signed file: {file.FilePath}");
                 }

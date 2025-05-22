@@ -44,7 +44,14 @@ namespace TownSuite.CodeSigning.Tests
             {
                 var dr = await BatchedSigning.Get(id, NSubstitute.Substitute.For<ILogger>());
 
-                if (dr is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult file)
+                if (dr is Microsoft.AspNetCore.Http.HttpResults.FileStreamHttpResult streamResult)
+                {
+                    doLoop = false;
+                    await using var resultStream = streamResult.FileStream;
+                    await using var file = File.OpenWrite(assemblyPath);
+                    resultStream.CopyTo(file);
+                }
+                else if (dr is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult file)
                 {
                     doLoop = false;
                     await System.IO.File.WriteAllBytesAsync(assemblyPath, file.FileContents.ToArray());
