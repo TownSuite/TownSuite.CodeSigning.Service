@@ -20,7 +20,7 @@ public static class FileHelpers
         return true;
     }
 
-    static bool FileAlreayHasDigitalSignature(string file)
+    static bool FileAlreadyHasDigitalSignature(string file)
     {
         try
         {
@@ -89,7 +89,7 @@ public static class FileHelpers
         var finalFiles = new List<string>();
         foreach (var file in files)
         {
-            if (IsValidFile(file) && !FileAlreayHasDigitalSignature(file))
+            if (IsValidFile(file) && !FileAlreadyHasDigitalSignature(file))
             {
                 finalFiles.Add(file);
             }
