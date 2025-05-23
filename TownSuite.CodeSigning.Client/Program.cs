@@ -166,49 +166,7 @@ void PrintHelp()
 
 async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bool ignoreFailures)
 {
-    var files = new List<string>();
-    if (!string.IsNullOrWhiteSpace(folder))
-    {
-        foreach (var file in filepaths)
-        {
-            if (file.Contains("*"))
-            {
-                // wild cards
-                string pattern = Path.GetFileName(file);
-                string[] matchingFiles = Directory.GetFiles(folder, pattern);
-                files.AddRange(matchingFiles);
-            }
-            else
-            {
-                string fullFilePath = Path.Combine(folder, file);
-                if (System.IO.File.Exists(fullFilePath))
-                {
-                    files.Add(fullFilePath);
-                }
-            }
-        }
-    }
-    else
-    {
-        foreach (var file in filepaths)
-        {
-            if (file.Contains("*"))
-            {
-                // wildcards
-                string directory = Path.GetDirectoryName(file);
-                string pattern = Path.GetFileName(file);
-                string[] matchingFiles = Directory.GetFiles(directory, pattern);
-                files.AddRange(matchingFiles);
-            }
-            else
-            {
-                if (System.IO.File.Exists(file))
-                {
-                    files.Add(file);
-                }
-            }
-        }
-    }
+    List<string> files = FileHelpers.CreateFileList(filepaths, folder);
 
     var signer = new SigningClient(client, url);
 
@@ -242,5 +200,3 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
 
     return false;
 }
-
-
