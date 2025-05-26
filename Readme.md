@@ -17,6 +17,18 @@ curl --location 'https://localhost:7153/sign' \
 -o output-signed-file.dll
 ```
 
+# Windows Defender Exclusion
+
+For increased performance add the services working directory to the windows defender exclusion path.
+
+**Important Note:**
+- **Security Risks**: Be cautious when excluding directories from antivirus scans, as this can potentially expose your system to threats if malicious files are placed in these directories.
+
+
+```powershell
+Add-MpPreference -ExclusionPath "C:\Users\[USER]\AppData\Local\Temp\1\townsuite\codesigning"
+```
+
 # Initial Security
 
 - [x] Add a firewall allow list on the server hosting the code signing service.
