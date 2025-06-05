@@ -51,6 +51,8 @@ LogSetup(builder);
 
 var app = builder.Build();
 
+Queuing.SetSemaphore(builder.Configuration.GetSection("Settings").Get<Settings>());
+
 // Configure the HTTP request pipeline.
 
 app.UseHttpsRedirection();
@@ -78,7 +80,7 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logg
         }
 
         using var signer = new Signer(settings, logger);
-        await Queuing.semaphore.WaitAsync();
+        await Queuing.Semaphore.WaitAsync();
         var results = await signer.SignAsync(workingFilePath.FullName);
 
         if (results.IsSigned)
@@ -96,7 +98,7 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logg
     }
     finally
     {
-        Queuing.semaphore.Release();
+        Queuing.Semaphore.Release();
         Cleanup(workingFilePath, logger);
     }
 });
