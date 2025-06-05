@@ -34,7 +34,7 @@ namespace TownSuite.CodeSigning.Service
                     try
                     {
                         using var signer = new Signer(settings, logger);
-                        await Queuing.semaphore.WaitAsync();
+                        await Queuing.Semaphore.WaitAsync();
                         var results = await signer.SignAsync(workingFilePath);
 
                         if (results.IsSigned)
@@ -54,7 +54,7 @@ namespace TownSuite.CodeSigning.Service
                     }
                     finally
                     {
-                        Queuing.semaphore.Release();
+                        Queuing.Semaphore.Release();
                     }
                 });
 

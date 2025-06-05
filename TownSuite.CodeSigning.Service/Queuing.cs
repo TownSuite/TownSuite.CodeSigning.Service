@@ -1,4 +1,6 @@
-﻿namespace TownSuite.CodeSigning.Service
+﻿using System.Threading;
+
+namespace TownSuite.CodeSigning.Service
 {
     static class Queuing
     {
@@ -12,9 +14,19 @@
 
             int count = Environment.ProcessorCount * settings.SemaphoreSlimProcessPerCpuLimit;
             // Initialize the semaphore with both initialCount and maxCount set to the calculated value
-            semaphore = new SemaphoreSlim(count, count);
+            _semaphore = new SemaphoreSlim(count, count);
         }
         // Allows concurrent operations up to the number of CPU cores
-        public static SemaphoreSlim semaphore = new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount);
+        private static SemaphoreSlim? _semaphore;
+
+        public static SemaphoreSlim Semaphore
+        {
+            get
+            {
+                if (_semaphore == null)
+                    throw new InvalidOperationException("Semaphore not initialized. Call SetSemaphore first.");
+                return _semaphore;
+            }
+        }
     }
 }
