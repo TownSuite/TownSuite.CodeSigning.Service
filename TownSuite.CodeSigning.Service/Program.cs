@@ -51,6 +51,8 @@ LogSetup(builder);
 
 var app = builder.Build();
 
+Queuing.SetSemaphore(builder.Configuration.GetSection("Settings").Get<Settings>());
+
 // Configure the HTTP request pipeline.
 
 app.UseHttpsRedirection();
