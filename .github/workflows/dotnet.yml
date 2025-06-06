@@ -23,14 +23,14 @@ jobs:
           name: linux-x64
           path: |
             TownSuite.CodeSigning.Service/bin/Release/net8.0
-            TownSuite.CodeSigning.Client/bin/Release/net8.0
+            TownSuite.CodeSigning.Client/bin/Release/net8.0/*
           retention-days: 1
       - name: Archive Self Contained Linux Client
         uses: actions/upload-artifact@v4
         with:
           name: linux-x64-client
           path: |
-            TownSuite.CodeSigning.Client/bin/Release/net8.0/publish/
+            TownSuite.CodeSigning.Client/bin/Release/net8.0/linux-x64/publish/
           retention-days: 1
       - name: Archive Self Contained Debian Linux Client
         uses: actions/upload-artifact@v4
@@ -56,12 +56,12 @@ jobs:
           name: win-x64
           path: |
             TownSuite.CodeSigning.Service/bin/Release/net8.0
-            TownSuite.CodeSigning.Client/bin/Release/net8.0
+            TownSuite.CodeSigning.Client/bin/Release/net8.0/*
           retention-days: 1
       - name: Archive Self Contained Windows Client
         uses: actions/upload-artifact@v4
         with:
           name: win-x64-client
           path: |
-            TownSuite.CodeSigning.Client/bin/Release/net8.0/publish/
+            TownSuite.CodeSigning.Client/bin/Release/net8.0/win-x64/publish/
           retention-days: 1

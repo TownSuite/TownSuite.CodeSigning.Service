@@ -4,11 +4,11 @@ VERSION=$(cat Directory.Build.props | grep "<Version>" | sed 's/[^0-9.]*//g')
 
 dotnet restore TownSuite.CodeSigning.Service.sln
 dotnet build -c Release TownSuite.CodeSigning.Service.sln --no-restore
-run: dotnet publish TownSuite.CodeSigning.Client -c Release -r linux-x64 -p:PublishReadyToRun=true --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
+dotnet publish TownSuite.CodeSigning.Client -c Release -r linux-x64 -p:PublishReadyToRun=true --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
 
 rm -rf /build/linux
 mkdir -p build/linux/opt/townsuite/codesigning/client
-cp -r TownSuite.CodeSigning.Client/bin/Release/net8.0/publish/* build/linux/opt/townsuite/codesigning/client/
+cp -r TownSuite.CodeSigning.Client/bin/Release/net8.0/linux-x64/publish/* build/linux/opt/townsuite/codesigning/client/
 mkdir -p build/linux/usr/bin
 cp -r townsuite-code-signing-client build/linux/usr/bin/townsuite-code-signing-client
 chmod +x build/linux/usr/bin/townsuite-code-signing-client
