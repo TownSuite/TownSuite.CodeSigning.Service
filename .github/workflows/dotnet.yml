@@ -16,8 +16,7 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Build
-        run: chmod +x ./build_linux.sh 
-             ./build_linux.sh
+        run: chmod +x ./build_linux.sh && ./build_linux.sh
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
