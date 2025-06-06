@@ -14,7 +14,7 @@ cp -r townsuite-code-signing-client build/linux/usr/bin/townsuite-code-signing-c
 chmod +x build/linux/usr/bin/townsuite-code-signing-client
 
 
-gem install fpm 
+sudo gem install fpm --no-document
 
 cd build/linux
 # build a deb package using fpm
