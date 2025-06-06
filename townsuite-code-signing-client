@@ -1,0 +1,4 @@
+#!/bin/sh
+dotnet /opt/townsuite/codesigning/client/TownSuite.CodeSigning.Client.dll "$@"
+rc=$?
+exit $rc
