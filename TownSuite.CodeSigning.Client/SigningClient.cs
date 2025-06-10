@@ -26,8 +26,11 @@ namespace TownSuite.CodeSigning.Client
         {
             var failedUploads = new List<(string FailedFile, string Message)>();
 
+            var batchId = Guid.NewGuid().ToString();
+
             var urk = new Uri(_url);
             string url = $"{urk.Scheme}://{urk.Host}:{urk.Port}/sign/batch";
+            string lastFile = filepaths.Last();
             foreach (string filepath in filepaths)
             {
                 bool failures = false;
@@ -40,8 +43,14 @@ namespace TownSuite.CodeSigning.Client
                         continue;
                     }
 
-
                     var request = new HttpRequestMessage(HttpMethod.Post, url);
+                    request.Headers.Add("X-BatchId", batchId);
+                    // if this is the last file add the X-BatchReady header
+                    if (lastFile == filepath)
+                    {
+                        request.Headers.Add("X-BatchReady", "true");
+                    }
+
                     await using var fs = File.OpenRead(filepath);
                     request.Content = new StreamContent(fs);
                     Console.WriteLine($"Uploading file: {filepath}");

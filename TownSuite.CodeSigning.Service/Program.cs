@@ -16,7 +16,14 @@ builder.WebHost.UseKestrel(o =>
 {
     var settings = builder.Configuration.GetSection("Settings").Get<Settings>();
     o.Limits.MaxRequestBodySize = settings.MaxRequestBodySize;
+
+    if (settings.SignToolOptions.Contains("testcert"))
+    {
+        Certs.CreateTestCert(Path.Combine(AppContext.BaseDirectory, "testcert.pfx"), "password");
+    }
 });
+builder.Services.AddHostedService<CleanerService>();
+
 
 var jwtSettings = builder.Configuration.GetSection("JWT").Get<JwtSettings>();
 
@@ -81,7 +88,7 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logg
 
         using var signer = new Signer(settings, logger);
         await Queuing.Semaphore.WaitAsync();
-        var results = await signer.SignAsync(workingFilePath.FullName);
+        var results = await signer.SignAsync(workingFilePath.Directory.FullName , [workingFilePath.FullName]);
 
         if (results.IsSigned)
         {
@@ -104,12 +111,12 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logg
 });
 app.MapPost("/sign/batch", async (HttpRequest request, Settings settings, ILogger logger) =>
 {
-    return await BatchedSigning.Sign(request.Body, settings, logger);
+    return await BatchedSigning.Sign(request.Headers.ToDictionary(), request.Body, settings, logger);
 });
 
-app.MapGet("/sign/batch", async (ILogger logger, string id) =>
+app.MapGet("/sign/batch", async (HttpRequest request, ILogger logger, string id) =>
 {
-    return await BatchedSigning.Get(id, logger);
+    return await BatchedSigning.Get(request.Headers.ToDictionary(), id, logger);
 });
 
 
@@ -127,7 +134,6 @@ static void Cleanup(FileInfo workingFilePath, ILogger logger)
         logger.LogError(ex, $"failed to cleanup file {workingFilePath}");
     }
 }
-
 
 static void InitializeWorkingFolder(string workingfolder, ILogger logger)
 {

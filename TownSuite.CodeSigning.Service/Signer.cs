@@ -29,12 +29,25 @@ namespace TownSuite.CodeSigning.Service
             p.Dispose();
         }
 
-        public async Task<(bool IsSigned, string Message)> SignAsync(string currentfile)
+        public async Task<(bool IsSigned, string Message)> SignAsync(string workingDir, string[] files)
         {
             p = new System.Diagnostics.Process();
             p.StartInfo.FileName = _settings.SignToolPath;
 
-            p.StartInfo.Arguments = _settings.SignToolOptions.Replace("{FilePath}", currentfile);
+            if (files.Length == 1)
+            {
+                p.StartInfo.Arguments = _settings.SignToolOptions
+                    .Replace("{FilePath}", files[0])
+                    .Replace("{BaseDirectory}", AppContext.BaseDirectory);
+            }
+            else
+            {
+                p.StartInfo.Arguments = _settings.SignToolOptions
+                    .Replace("\"{FilePath}\"", string.Join(" ", files))
+                    .Replace("{BaseDirectory}", AppContext.BaseDirectory);
+            }
+
+            p.StartInfo.WorkingDirectory = workingDir;
             p.StartInfo.UseShellExecute = false;
             p.StartInfo.ErrorDialog = false;
             p.StartInfo.CreateNoWindow = true;

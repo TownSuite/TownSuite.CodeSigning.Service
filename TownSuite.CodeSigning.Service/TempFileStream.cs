@@ -3,10 +3,11 @@
     public class TempFileStream: FileStream
     {
         private readonly DirectoryInfo _dir;
-
+        private readonly string _workingFile;
         public TempFileStream(string workingFile, DirectoryInfo directoryToRemove)
             : base(workingFile, FileMode.Open, FileAccess.Read, FileShare.None, 4096, FileOptions.DeleteOnClose)
         {
+            _workingFile = workingFile;
             _dir = directoryToRemove;
         }
 
@@ -19,7 +20,8 @@
         public new void Dispose()
         {
             base.Dispose();
-            _dir.Delete(true);
+            System.IO.File.Delete(_workingFile);
+            _dir?.Delete(true);
         }
     }
 }

@@ -1,21 +1,26 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
+using System.Collections;
 using System.Runtime.InteropServices;
 
 namespace TownSuite.CodeSigning.Service
 {
     public static class BatchedSigning
     {
-
         public static string GetTempFolder()
         {
             return Path.Combine(Path.GetTempPath(), "townsuite", "codesigning");
         }
 
-        public static async Task<IResult> Sign(Stream body, Settings settings, ILogger logger)
+        public static async Task<IResult> Sign(Dictionary<string, StringValues> headers, Stream body, Settings settings, ILogger logger)
         {
+            headers.TryGetValue("X-BatchId", out var batchId);
+            headers.TryGetValue("X-BatchReady", out var batchReady);
+            bool isBatchJob = VerifyBatchId(batchId);
+
             string id = Guid.NewGuid().ToString();
 
-            var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), id));
+            var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), isBatchJob ? batchId : id));
             string workingFilePath = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
             try
             {
@@ -26,37 +31,20 @@ namespace TownSuite.CodeSigning.Service
 
                 await using (var fileStream = new FileStream(workingFilePath, FileMode.Create))
                 {
+                    if (body.CanSeek) body.Position = 0;
                     await body.CopyToAsync(fileStream);
                 }
 
-                BackgroundQueue.Instance.QueueThread(async () =>
+                if (!isBatchJob)
                 {
-                    try
-                    {
-                        using var signer = new Signer(settings, logger);
-                        await Queuing.Semaphore.WaitAsync();
-                        var results = await signer.SignAsync(workingFilePath);
-
-                        if (results.IsSigned)
-                        {
-                            await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed"), "true");
-                        }
-                        else
-                        {
-                            await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), results.Message);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), ex.Message);
-                        logger.LogError(ex, $"Failed to sign file {workingFilePath}");
-                        CleanupDir(workingFolder, logger);
-                    }
-                    finally
-                    {
-                        Queuing.Semaphore.Release();
-                    }
-                });
+                    // single file batch, only for backwards compatiblity
+                    ProcessFile(settings, logger, id, workingFolder, [workingFilePath]);
+                }
+                else if (isBatchJob && !string.IsNullOrWhiteSpace(batchReady))
+                {
+                    var files = GetBatchFiles(workingFolder);
+                    ProcessFile(settings, logger, batchId, workingFolder, files);
+                }
 
                 return Results.Ok(id);
             }
@@ -67,10 +55,64 @@ namespace TownSuite.CodeSigning.Service
             }
         }
 
-        public static async Task<IResult> Get(string id, ILogger logger)
+        private static bool VerifyBatchId(StringValues batchId)
         {
+            if (!string.IsNullOrWhiteSpace(batchId))
+            {
+                // verify X-BatchId is a guid
+                var isValidGuid = Guid.TryParse(batchId, out var _);
+                if (!isValidGuid)
+                {
+                    throw new InvalidDataException("When set X-BatchId should be a valid GUID");
+                }
+                return true;
+            }
+            return false;
+        }
 
-            var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), id));
+        private static void ProcessFile(Settings settings, ILogger logger, string id, DirectoryInfo workingFolder, string[] files)
+        {
+            BackgroundQueue.Instance.QueueThread(async () =>
+            {
+                try
+                {
+                    using var signer = new Signer(settings, logger);
+                    await Queuing.Semaphore.WaitAsync();
+                    var results = await signer.SignAsync(workingFolder.FullName, files);
+
+                    if (results.IsSigned)
+                    {
+                        await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed"), "true");
+                    }
+                    else
+                    {
+                        await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), results.Message);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), ex.Message);
+                    logger.LogError(ex, $"Failed to sign file {string.Join(",", files)}");
+                    CleanupDir(workingFolder, logger);
+                }
+                finally
+                {
+                    Queuing.Semaphore.Release();
+                }
+            });
+        }
+
+        private static string[] GetBatchFiles(DirectoryInfo workingFolder)
+        {
+            return workingFolder.GetFiles("*.workingfile").Where(p => p.Length>0).Select(p => p.Name).ToArray();
+        }
+
+        public static async Task<IResult> Get(Dictionary<string, StringValues> headers, string id, ILogger logger)
+        {
+            headers.TryGetValue("X-BatchId", out var batchId);
+            bool isBatchJob = VerifyBatchId(batchId);
+
+            var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), isBatchJob ? batchId : id));
 
             if (!workingFolder.Exists)
             {
@@ -80,7 +122,7 @@ namespace TownSuite.CodeSigning.Service
             if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed")))
             {
                 var workingFile = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
-                var fileStream = new TempFileStream(workingFile, workingFolder);
+                var fileStream = new TempFileStream(workingFile, !isBatchJob ? workingFolder : null);
                 return Results.Stream(fileStream);
             }
 
