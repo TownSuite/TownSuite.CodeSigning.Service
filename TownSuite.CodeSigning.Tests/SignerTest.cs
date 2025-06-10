@@ -22,7 +22,7 @@ namespace TownSuite.CodeSigning.Tests
             var signer = new Signer(settings, NSubstitute.Substitute.For<ILogger>());
             // Act
             System.IO.File.Copy(srcAssemblyPath, assemblyPath, true);
-            var result = await signer.SignAsync(assemblyPath);
+            var result = await signer.SignAsync(AppContext.BaseDirectory, [assemblyPath]);
             // Assert
 
             Assert.Multiple(() =>

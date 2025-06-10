@@ -6,11 +6,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace TownSuite.CodeSigning.Tests
+namespace TownSuite.CodeSigning.Service
 {
-    static internal class Certs
+    static public class Certs
     {
-        public static void CreateTestCert(string savePath = "testcert.pfx", string password = "password")
+        public static void CreateTestCert(string savePath, string password)
         {
             // Define the certificate subject name
             string subjectName = "CN=TestCertificate";

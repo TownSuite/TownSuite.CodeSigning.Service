@@ -15,14 +15,17 @@ namespace TownSuite.CodeSigning.Tests
         [OneTimeSetUp]
         public void Setup()
         {
-            Certs.CreateTestCert(certPath);
+            Certs.CreateTestCert(certPath, password);
             SignToolSettings = new Settings()
             {
                 MaxRequestBodySize = 1000000,
-                SignToolOptions = "sign /fd SHA256 /f \"testcert.pfx\" /p \"password\" /t \"http://timestamp.digicert.com\" /v \"{FilePath}\"",
+                SignToolOptions = "sign /fd SHA256 /f \"{BaseDirectory}testcert.pfx\" /p \"password\" /t \"http://timestamp.digicert.com\" /v \"{FilePath}\"",
                 SignToolPath = SignToolPath,
-                SigntoolTimeoutInMs = 10000
+                SigntoolTimeoutInMs = 10000,
+                SemaphoreSlimProcessPerCpuLimit=1
             };
+
+            CodeSigning.Service.Queuing.SetSemaphore(SignToolSettings);
         }
 
         [OneTimeTearDown]

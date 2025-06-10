@@ -2,7 +2,7 @@
 
 namespace TownSuite.CodeSigning.Service
 {
-    static class Queuing
+    public static class Queuing
     {
         public static void SetSemaphore(Settings settings)
         {
