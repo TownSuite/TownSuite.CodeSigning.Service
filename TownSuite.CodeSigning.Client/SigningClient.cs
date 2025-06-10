@@ -49,22 +49,28 @@ namespace TownSuite.CodeSigning.Client
                         continue;
                     }
 
-                    var request = new HttpRequestMessage(HttpMethod.Post, url);
-                    request.Headers.Add("X-BatchId", batchId);
+
                     // if this is the last file add the X-BatchReady header
                     if (lastFile == filepath)
                     {
+
                         await Task.WhenAll(tasks);
+                        var request = new HttpRequestMessage(HttpMethod.Post, url);
+                        request.Headers.Add("X-BatchId", batchId);
                         request.Headers.Add("X-BatchReady", "true");
                         await SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request);
                     }
 
                     if (firstFile == filepath)
                     {
+                        var request = new HttpRequestMessage(HttpMethod.Post, url);
+                        request.Headers.Add("X-BatchId", batchId);
                         await SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request);
                     }
                     else if (lastFile != filepath)
                     {
+                        var request = new HttpRequestMessage(HttpMethod.Post, url);
+                        request.Headers.Add("X-BatchId", batchId);
                         // if this is not the first or last file, we can send it in parallel
                         tasks.Add(SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request));
                     }
@@ -86,7 +92,7 @@ namespace TownSuite.CodeSigning.Client
             try
             {
                 await semaphore.WaitAsync();
-                var fs = File.OpenRead(filepath);
+                using var fs = File.OpenRead(filepath);
                 request.Content = new StreamContent(fs);
                 Console.WriteLine($"Uploading file: {filepath}");
                 var response = await _client.SendAsync(request);
