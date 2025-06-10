@@ -17,7 +17,7 @@ namespace TownSuite.CodeSigning.Service
             _logger = logger;
         }
 
-        private CancellationToken _cancellationToken => new CancellationTokenSource(_settings.SigntoolTimeoutInMs).Token;
+        private CancellationToken _cancellationToken;
         public void Dispose()
         {
             if (p == null)
@@ -31,6 +31,8 @@ namespace TownSuite.CodeSigning.Service
 
         public async Task<(bool IsSigned, string Message)> SignAsync(string workingDir, string[] files)
         {
+            _cancellationToken = new CancellationTokenSource(_settings.SigntoolTimeoutInMs * files.Length).Token;
+
             p = new System.Diagnostics.Process();
             p.StartInfo.FileName = _settings.SignToolPath;
 

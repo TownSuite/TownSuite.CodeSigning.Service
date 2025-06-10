@@ -119,7 +119,8 @@ namespace TownSuite.CodeSigning.Service
                 return Results.Problem(title: "Not Found", detail: "The id was not found", statusCode: 404);
             }
 
-            if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed")))
+            string signedFilesIndicator = isBatchJob ? $"{batchId}.signed" : $"{id}.signed";
+            if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, signedFilesIndicator)))
             {
                 var workingFile = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
                 var fileStream = new TempFileStream(workingFile, !isBatchJob ? workingFolder : null);
