@@ -53,15 +53,13 @@ namespace TownSuite.CodeSigning.Client
                     // if this is the last file add the X-BatchReady header
                     if (lastFile == filepath)
                     {
-
                         await Task.WhenAll(tasks);
                         var request = new HttpRequestMessage(HttpMethod.Post, url);
                         request.Headers.Add("X-BatchId", batchId);
                         request.Headers.Add("X-BatchReady", "true");
                         await SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request);
                     }
-
-                    if (firstFile == filepath)
+                    else if (firstFile == filepath)
                     {
                         var request = new HttpRequestMessage(HttpMethod.Post, url);
                         request.Headers.Add("X-BatchId", batchId);
