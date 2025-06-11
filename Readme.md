@@ -20,7 +20,7 @@ curl --location 'https://localhost:7153/sign' \
 # TownSuite.CodeSigning.Client example
 
 ```bash
-./TownSuite.CodeSigning.Client -folder "/path/to/folder/with/assemblies" -file "*.dll" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
+./TownSuite.CodeSigning.Client -folder "/path/to/folder/with/assemblies" -file "*.dll;*.exe" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
 ```
 
 
