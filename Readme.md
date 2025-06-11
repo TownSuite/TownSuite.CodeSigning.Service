@@ -17,6 +17,14 @@ curl --location 'https://localhost:7153/sign' \
 -o output-signed-file.dll
 ```
 
+# TownSuite.CodeSigning.Client example
+
+```bash
+./TownSuite.CodeSigning.Client -folder "/path/to/folder/with/assemblies" -file "*.dll" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
+```
+
+
+
 # Windows Defender Exclusion
 
 For increased performance add the services working directory to the windows defender exclusion path.
