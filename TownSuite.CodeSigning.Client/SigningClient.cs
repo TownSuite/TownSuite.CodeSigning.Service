@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TownSuite.CodeSigning.Client
@@ -12,6 +13,8 @@ namespace TownSuite.CodeSigning.Client
     {
         private readonly HttpClient _client;
         private readonly string _url;
+        private readonly SemaphoreSlim semaphore = new SemaphoreSlim(4, 4);
+        private string batchId;
         public SigningClient(HttpClient client, string baseUrl)
         {
             _client = client;
@@ -26,11 +29,14 @@ namespace TownSuite.CodeSigning.Client
         {
             var failedUploads = new List<(string FailedFile, string Message)>();
 
-            var batchId = Guid.NewGuid().ToString();
+            batchId = Guid.NewGuid().ToString();
 
             var urk = new Uri(_url);
             string url = $"{urk.Scheme}://{urk.Host}:{urk.Port}/sign/batch";
+            string firstFile = filepaths.First();
             string lastFile = filepaths.Last();
+            var tasks = new List<Task>();
+
             foreach (string filepath in filepaths)
             {
                 bool failures = false;
@@ -43,37 +49,30 @@ namespace TownSuite.CodeSigning.Client
                         continue;
                     }
 
-                    var request = new HttpRequestMessage(HttpMethod.Post, url);
-                    request.Headers.Add("X-BatchId", batchId);
+
                     // if this is the last file add the X-BatchReady header
                     if (lastFile == filepath)
                     {
+                        await Task.WhenAll(tasks);
+                        var request = new HttpRequestMessage(HttpMethod.Post, url);
+                        request.Headers.Add("X-BatchId", batchId);
                         request.Headers.Add("X-BatchReady", "true");
+                        await SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request);
+                    }
+                    else if (firstFile == filepath)
+                    {
+                        var request = new HttpRequestMessage(HttpMethod.Post, url);
+                        request.Headers.Add("X-BatchId", batchId);
+                        await SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request);
+                    }
+                    else if (lastFile != filepath)
+                    {
+                        var request = new HttpRequestMessage(HttpMethod.Post, url);
+                        request.Headers.Add("X-BatchId", batchId);
+                        // if this is not the first or last file, we can send it in parallel
+                        tasks.Add(SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request));
                     }
 
-                    await using var fs = File.OpenRead(filepath);
-                    request.Content = new StreamContent(fs);
-                    Console.WriteLine($"Uploading file: {filepath}");
-                    var response = await _client.SendAsync(request);
-                    fs.Close();
-                    if (response.IsSuccessStatusCode)
-                    {
-                        string id = await response.Content.ReadAsStringAsync();
-                        TrackedFiles.Add((id.Replace("\"", ""), filepath));
-                    }
-                    else
-                    {
-                        var failedOutput = await response.Content.ReadAsStringAsync();
-                        failedUploads.Add((filepath, failedOutput));
-
-                        if (quickFail && !ignoreFailures)
-                        {
-                            Console.WriteLine("Quick fail");
-                            Console.WriteLine($"Failed to sign file: {filepath}");
-                            Console.WriteLine(failedOutput);
-                            Environment.Exit(-1);
-                        }
-                    }
                 }
                 catch (Exception)
                 {
@@ -82,7 +81,43 @@ namespace TownSuite.CodeSigning.Client
                 }
 
             }
+
             return failedUploads.ToArray();
+        }
+
+        private async Task SendRequest(bool quickFail, bool ignoreFailures, List<(string FailedFile, string Message)> failedUploads, string filepath, HttpRequestMessage request)
+        {
+            try
+            {
+                await semaphore.WaitAsync();
+                using var fs = File.OpenRead(filepath);
+                request.Content = new StreamContent(fs);
+                Console.WriteLine($"Uploading file: {filepath}");
+                var response = await _client.SendAsync(request);
+                fs.Close();
+                if (response.IsSuccessStatusCode)
+                {
+                    string id = await response.Content.ReadAsStringAsync();
+                    TrackedFiles.Add((id.Replace("\"", ""), filepath));
+                }
+                else
+                {
+                    var failedOutput = await response.Content.ReadAsStringAsync();
+                    failedUploads.Add((filepath, failedOutput));
+
+                    if (quickFail && !ignoreFailures)
+                    {
+                        Console.WriteLine("Quick fail");
+                        Console.WriteLine($"Failed to sign file: {filepath}");
+                        Console.WriteLine(failedOutput);
+                        Environment.Exit(-1);
+                    }
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
         }
 
         public async Task<(string FailedFile, string Message)[]> DownloadSignedFiles(bool quickFail, bool ignoreFailures,
@@ -130,7 +165,10 @@ namespace TownSuite.CodeSigning.Client
                     Console.WriteLine($"Polling download for file {file.FilePath}");
                 }
 
-                var response = await _client.GetAsync(pollUrl);
+                var request = new HttpRequestMessage(HttpMethod.Get, pollUrl);
+                request.Headers.Add("X-BatchId", batchId);
+
+                var response = await _client.SendAsync(request);
                 if (response.IsSuccessStatusCode)
                 {
                     await using var resultStream = await response.Content.ReadAsStreamAsync();
