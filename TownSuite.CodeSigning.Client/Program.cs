@@ -168,6 +168,12 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
 {
     List<string> files = FileHelpers.CreateFileList(filepaths, folder);
 
+    if (files.Count == 0)
+    {
+        Console.WriteLine("No files found to sign.");
+        return false;
+    }
+
     var signer = new SigningClient(client, url);
 
     bool signingServiceIsOnline = await signer.HealthCheck();
