@@ -24,10 +24,7 @@ namespace TownSuite.CodeSigning.Service
             string workingFilePath = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
             try
             {
-                if (!workingFolder.Exists)
-                {
-                    workingFolder.Create();
-                }
+                workingFolder.CreateIfNotExists();
 
                 await using (var fileStream = new FileStream(workingFilePath, FileMode.Create))
                 {
@@ -80,6 +77,7 @@ namespace TownSuite.CodeSigning.Service
                     await Queuing.Semaphore.WaitAsync();
                     var results = await signer.SignAsync(workingFolder.FullName, files);
 
+                    workingFolder.CreateIfNotExists();
                     if (results.IsSigned)
                     {
                         await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.signed"), "true");
@@ -91,6 +89,7 @@ namespace TownSuite.CodeSigning.Service
                 }
                 catch (Exception ex)
                 {
+                    workingFolder.CreateIfNotExists();
                     await File.WriteAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error"), ex.Message);
                     logger.LogError(ex, $"Failed to sign file {string.Join(",", files)}");
                     CleanupDir(workingFolder, logger);
