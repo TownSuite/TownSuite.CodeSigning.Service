@@ -179,6 +179,7 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
     bool signingServiceIsOnline = await signer.HealthCheck();
     if (!signingServiceIsOnline)
     {
+        Console.WriteLine("Signing service is not available.");
         Environment.Exit(-2);
     }
 

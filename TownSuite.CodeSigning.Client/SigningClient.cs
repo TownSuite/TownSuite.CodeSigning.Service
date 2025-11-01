@@ -29,6 +29,12 @@ namespace TownSuite.CodeSigning.Client
         {
             var failedUploads = new List<(string FailedFile, string Message)>();
 
+            if (filepaths == null || filepaths.Length == 0)
+            {
+                Console.WriteLine("UploadFiles called with empty file list.");
+                return failedUploads.ToArray();
+            }
+
             batchId = Guid.NewGuid().ToString();
 
             var urk = new Uri(_url);
