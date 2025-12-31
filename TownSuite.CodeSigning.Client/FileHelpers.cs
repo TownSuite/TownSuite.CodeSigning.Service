@@ -13,7 +13,7 @@ public static class FileHelpers
             return false;
         }
         var ext = Path.GetExtension(file);
-        if (ext != ".exe" && ext != ".dll")
+        if (ext != ".exe" && ext != ".dll" && ext != ".msi" && ext != "msix")
         {
             return false;
         }
