@@ -1,4 +1,5 @@
-﻿using System.Security.Cryptography.X509Certificates;
+﻿using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 public static class FileHelpers
 {
@@ -96,5 +97,167 @@ public static class FileHelpers
         }
 
         return finalFiles;
+    }
+
+    /// <summary>
+    /// Builds a combined file list from multiple folder paths, each using the same file patterns.
+    /// </summary>
+    public static List<string> CreateFileListFromMultipleFolders(string[] filepaths, string[] folders)
+    {
+        var pairs = new List<(string Folder, string[] Files)>();
+        foreach (string folder in folders)
+        {
+            string trimmed = folder.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmed))
+            {
+                pairs.Add((trimmed, filepaths));
+            }
+        }
+
+        return CreateFileListFromFolderFilePairs(pairs);
+    }
+
+    /// <summary>
+    /// Builds a combined file list from folder/file pairs where each folder has its own file patterns.
+    /// </summary>
+    public static List<string> CreateFileListFromFolderFilePairs(List<(string Folder, string[] Files)> folderFilePairs)
+    {
+        ArgumentNullException.ThrowIfNull(folderFilePairs);
+
+        var allFiles = new List<string>();
+        foreach (var (folder, files) in folderFilePairs)
+        {
+            string trimmed = folder.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                continue;
+            }
+
+            allFiles.AddRange(CreateFileList(files, trimmed));
+        }
+
+        return allFiles;
+    }
+
+    /// <summary>
+    /// Recursively scans parent folders for files matching the given patterns.
+    /// Each entry is a parent folder paired with its own file patterns.
+    /// </summary>
+    public static List<string> CreateFileListRecursive(List<(string Folder, string[] Files)> folderFilePairs)
+    {
+        ArgumentNullException.ThrowIfNull(folderFilePairs);
+
+        var allFiles = new List<string>();
+        foreach (var (parentFolder, filePatterns) in folderFilePairs)
+        {
+            string trimmed = parentFolder.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) || !Directory.Exists(trimmed))
+            {
+                continue;
+            }
+
+            foreach (string pattern in filePatterns)
+            {
+                string trimmedPattern = pattern.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedPattern))
+                {
+                    continue;
+                }
+
+                if (trimmedPattern.Contains('*') || trimmedPattern.Contains('?'))
+                {
+                    string[] matchingFiles = Directory.GetFiles(trimmed, trimmedPattern, SearchOption.AllDirectories);
+                    allFiles.AddRange(matchingFiles);
+                }
+                else
+                {
+                    // Exact filename — search all subdirectories
+                    string[] matchingFiles = Directory.GetFiles(trimmed, trimmedPattern, SearchOption.AllDirectories);
+                    allFiles.AddRange(matchingFiles);
+                }
+            }
+        }
+
+        var finalFiles = new List<string>();
+        foreach (var file in allFiles)
+        {
+            if (IsValidFile(file) && !FileAlreadyHasDigitalSignature(file))
+            {
+                finalFiles.Add(file);
+            }
+        }
+
+        return finalFiles;
+    }
+
+    /// <summary>
+    /// Computes a SHA-256 hash of a file's contents, returned as a lowercase hex string.
+    /// </summary>
+    public static string ComputeFileHash(string filePath)
+    {
+        ArgumentNullException.ThrowIfNull(filePath);
+
+        using var stream = File.OpenRead(filePath);
+        byte[] hashBytes = SHA256.HashData(stream);
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Groups files by content hash. Returns a dictionary mapping each canonical file
+    /// (the first encountered with a given hash) to all other files with the same content.
+    /// </summary>
+    public static (List<string> UniqueFiles, Dictionary<string, List<string>> DuplicateMap) DeduplicateFiles(
+        List<string> files)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+
+        // hash -> list of file paths with that hash
+        var hashGroups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        foreach (string file in files)
+        {
+            string hash = ComputeFileHash(file);
+            if (!hashGroups.TryGetValue(hash, out var group))
+            {
+                group = new List<string>();
+                hashGroups[hash] = group;
+            }
+
+            group.Add(file);
+        }
+
+        var uniqueFiles = new List<string>();
+        // canonical file path -> list of duplicate file paths (excluding the canonical)
+        var duplicateMap = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        foreach (var group in hashGroups.Values)
+        {
+            string canonical = group[0];
+            uniqueFiles.Add(canonical);
+
+            if (group.Count > 1)
+            {
+                duplicateMap[canonical] = group.GetRange(1, group.Count - 1);
+            }
+        }
+
+        return (uniqueFiles, duplicateMap);
+    }
+
+    /// <summary>
+    /// After signing, copies each signed canonical file to all its duplicate locations.
+    /// </summary>
+    public static void CopySignedFilesToDuplicates(Dictionary<string, List<string>> duplicateMap)
+    {
+        ArgumentNullException.ThrowIfNull(duplicateMap);
+
+        foreach (var (canonical, duplicates) in duplicateMap)
+        {
+            foreach (string duplicate in duplicates)
+            {
+                File.Copy(canonical, duplicate, overwrite: true);
+                Console.WriteLine($"Copied signed file to duplicate location: {duplicate}");
+            }
+        }
     }
 }

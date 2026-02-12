@@ -6,6 +6,8 @@ using TownSuite.CodeSigning.Client;
 
 string[] filepaths = null;
 string folder = string.Empty;
+var folderFilePairs = new List<(string Folder, string[] Files)>();
+var recursiveFolderFilePairs = new List<(string Folder, string[] Files)>();
 string url = string.Empty;
 string baseurl = string.Empty;
 string token = string.Empty;
@@ -18,7 +20,37 @@ for (int i = 0; i < args.Length; i++)
 {
     if (string.Equals(args[i], "-file", StringComparison.InvariantCultureIgnoreCase))
     {
-        filepaths = args[i + 1].Split(";");
+        filepaths = args[i + 1].Split(";", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    }
+    else if (string.Equals(args[i], "-folders", StringComparison.InvariantCultureIgnoreCase))
+    {
+        string value = args[i + 1];
+        int pipeIndex = value.IndexOf('|');
+        if (pipeIndex < 0)
+        {
+            Console.WriteLine("-folders entries must use | to separate folder from files. Example: -folders \"C:\\path|*.dll;*.exe\"");
+            PrintHelp();
+            System.Environment.Exit(-1);
+        }
+
+        string folderPath = value[..pipeIndex].Trim();
+        string[] filePatterns = value[(pipeIndex + 1)..].Split(";", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        folderFilePairs.Add((folderPath, filePatterns));
+    }
+    else if (string.Equals(args[i], "-rfolder", StringComparison.InvariantCultureIgnoreCase))
+    {
+        string value = args[i + 1];
+        int pipeIndex = value.IndexOf('|');
+        if (pipeIndex < 0)
+        {
+            Console.WriteLine("-rfolder entries must use | to separate folder from files. Example: -rfolder \"C:\\path|*.dll;*.exe\"");
+            PrintHelp();
+            System.Environment.Exit(-1);
+        }
+
+        string folderPath = value[..pipeIndex].Trim();
+        string[] filePatterns = value[(pipeIndex + 1)..].Split(";", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        recursiveFolderFilePairs.Add((folderPath, filePatterns));
     }
     else if (string.Equals(args[i], "-folder", StringComparison.InvariantCultureIgnoreCase))
     {
@@ -80,9 +112,9 @@ if (string.IsNullOrWhiteSpace(baseurl))
 }
 
 
-if (filepaths == null || filepaths.Length == 0)
+if ((filepaths == null || filepaths.Length == 0) && folderFilePairs.Count == 0 && recursiveFolderFilePairs.Count == 0)
 {
-    Console.WriteLine("-file must be set");
+    Console.WriteLine("-file must be set (or use -folders / -rfolder)");
     PrintHelp();
     System.Environment.Exit(-1);
 }
@@ -117,7 +149,7 @@ if (!string.IsNullOrWhiteSpace(token))
 try
 {
     bool failures = false;
-    failures = await ProcessFiles(filepaths, url, quickFail, ignoreFailures);
+    failures = await ProcessFiles(filepaths, url, quickFail, ignoreFailures, folder, folderFilePairs, recursiveFolderFilePairs);
 
     if (failures && !ignoreFailures)
     {
@@ -147,6 +179,15 @@ void PrintHelp()
     Console.WriteLine("    the file path can contain multiple files by ; separating them.");
     Console.WriteLine("-folder \"the folder that the dll or exe are located\"");
     Console.WriteLine("    If this is set -file is assumed to just be a filename instead of a full path.");
+    Console.WriteLine("-folders \"folder|file1;file2;file3\"");
+    Console.WriteLine("    A folder path and its file patterns separated by |. Files within are ; separated.");
+    Console.WriteLine("    Can be specified multiple times, each folder gets its own file list.");
+    Console.WriteLine("    Duplicate files across folders are detected by SHA-256 hash and only signed once.");
+    Console.WriteLine("    After signing, the signed copy is distributed to all duplicate locations.");
+    Console.WriteLine("-rfolder \"parentFolder|file1;file2;file3\"");
+    Console.WriteLine("    A parent folder path and file patterns separated by |. Files within are ; separated.");
+    Console.WriteLine("    Recursively scans all subdirectories for matching files.");
+    Console.WriteLine("    Can be specified multiple times. Duplicates are detected and signed once.");
     Console.WriteLine("-url \"url to signing server\"");
     Console.WriteLine("-token \"the auth token\" or -tokenfile \"path to plain text file holding token\"");
     Console.WriteLine("-quickfail if this is set the program will exit on the first faliure.");
@@ -160,18 +201,52 @@ void PrintHelp()
     Console.WriteLine("");
     Console.WriteLine("Example");
     Console.WriteLine(
-        ".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
+        ".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
+    Console.WriteLine(
+        ".\\TownSuite.CodeSigning.Client.exe -folders \"C:\\publish\\win-x64|*.dll;*.exe\" -folders \"C:\\publish\\linux-x64|*.dll;*.so\" -url \"https://localhost:5000/sign\" -token \"the token\"");
+    Console.WriteLine(
+        ".\\TownSuite.CodeSigning.Client.exe -rfolder \"C:\\publish|*.dll;*.exe\" -url \"https://localhost:5000/sign\" -token \"the token\"");
 }
 
 
-async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bool ignoreFailures)
+async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, bool ignoreFailures,
+    string folder, List<(string Folder, string[] Files)> folderFilePairs,
+    List<(string Folder, string[] Files)> recursiveFolderFilePairs)
 {
-    List<string> files = FileHelpers.CreateFileList(filepaths, folder);
+    var files = new List<string>();
+
+    if (folderFilePairs.Count > 0)
+    {
+        files.AddRange(FileHelpers.CreateFileListFromFolderFilePairs(folderFilePairs));
+    }
+
+    if (recursiveFolderFilePairs.Count > 0)
+    {
+        files.AddRange(FileHelpers.CreateFileListRecursive(recursiveFolderFilePairs));
+    }
+
+    // Also include any standalone -file/-folder files
+    if (filepaths != null && filepaths.Length > 0)
+    {
+        files.AddRange(FileHelpers.CreateFileList(filepaths, folder));
+    }
 
     if (files.Count == 0)
     {
         Console.WriteLine("No files found to sign.");
         return false;
+    }
+
+    // Deduplicate files by content hash so each unique file is only signed once
+    var (uniqueFiles, duplicateMap) = FileHelpers.DeduplicateFiles(files);
+
+    int totalFiles = files.Count;
+    int uniqueCount = uniqueFiles.Count;
+    int duplicateCount = totalFiles - uniqueCount;
+    if (duplicateCount > 0)
+    {
+        Console.WriteLine($"Found {totalFiles} files to sign, {duplicateCount} duplicates detected.");
+        Console.WriteLine($"Signing {uniqueCount} unique files.");
     }
 
     var signer = new SigningClient(client, url);
@@ -183,7 +258,7 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
         Environment.Exit(-2);
     }
 
-    var uploadFailures = await signer.UploadFiles(quickFail, ignoreFailures, files.ToArray());
+    var uploadFailures = await signer.UploadFiles(quickFail, ignoreFailures, uniqueFiles.ToArray());
     if (uploadFailures.Length > 0)
     {
         foreach (var result in uploadFailures)
@@ -203,6 +278,12 @@ async Task<bool> ProcessFiles(string[] filepaths, string url, bool quickFail, bo
             Console.WriteLine(result.Message);
         }
         return true;
+    }
+
+    // Copy signed files to all duplicate locations
+    if (duplicateMap.Count > 0)
+    {
+        FileHelpers.CopySignedFilesToDuplicates(duplicateMap);
     }
 
     return false;
