@@ -34,7 +34,7 @@ for (int i = 0; i < args.Length; i++)
         }
 
         string folderPath = value[..pipeIndex].Trim();
-        string[] filePatterns = value[(pipeIndex + 1)..].Split(";");
+        string[] filePatterns = value[(pipeIndex + 1)..].Split(";", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         folderFilePairs.Add((folderPath, filePatterns));
     }
     else if (string.Equals(args[i], "-rfolder", StringComparison.InvariantCultureIgnoreCase))
@@ -49,7 +49,7 @@ for (int i = 0; i < args.Length; i++)
         }
 
         string folderPath = value[..pipeIndex].Trim();
-        string[] filePatterns = value[(pipeIndex + 1)..].Split(";");
+        string[] filePatterns = value[(pipeIndex + 1)..].Split(";", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         recursiveFolderFilePairs.Add((folderPath, filePatterns));
     }
     else if (string.Equals(args[i], "-folder", StringComparison.InvariantCultureIgnoreCase))
