@@ -228,7 +228,7 @@ public static class FileHelpers
 
         var uniqueFiles = new List<string>();
         // canonical file path -> list of duplicate file paths (excluding the canonical)
-        var duplicateMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var duplicateMap = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
         foreach (var group in hashGroups.Values)
         {
