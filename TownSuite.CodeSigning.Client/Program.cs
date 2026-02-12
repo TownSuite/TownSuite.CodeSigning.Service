@@ -20,7 +20,7 @@ for (int i = 0; i < args.Length; i++)
 {
     if (string.Equals(args[i], "-file", StringComparison.InvariantCultureIgnoreCase))
     {
-        filepaths = args[i + 1].Split(";");
+        filepaths = args[i + 1].Split(";", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
     }
     else if (string.Equals(args[i], "-folders", StringComparison.InvariantCultureIgnoreCase))
     {
