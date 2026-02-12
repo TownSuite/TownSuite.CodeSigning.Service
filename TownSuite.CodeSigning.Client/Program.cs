@@ -201,7 +201,7 @@ void PrintHelp()
     Console.WriteLine("");
     Console.WriteLine("Example");
     Console.WriteLine(
-        ".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
+        ".\\TownSuite.CodeSigning.Client.exe -file \"C:\\some\\file.dll\" -url \"https://localhost:5000/sign\" -token \"the token\"");
     Console.WriteLine(
         ".\\TownSuite.CodeSigning.Client.exe -folders \"C:\\publish\\win-x64|*.dll;*.exe\" -folders \"C:\\publish\\linux-x64|*.dll;*.so\" -url \"https://localhost:5000/sign\" -token \"the token\"");
     Console.WriteLine(
