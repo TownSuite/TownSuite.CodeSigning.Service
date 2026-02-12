@@ -33,8 +33,8 @@ Each `-folders` entry pairs a folder path with its own file patterns separated b
 
 Duplicate files across folders are detected by SHA-256 hash and only signed once. After signing, the signed copy is distributed to all duplicate locations.
 
-```bash
-./TownSuite.CodeSigning.Client -folders "C:\publish\win-x64|*.dll;*.exe" -folders "C:\publish\linux-x64|mylib.dll;*.so" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
+```powershell
+.\TownSuite.CodeSigning.Client.exe -folders "C:\publish\win-x64|*.dll;*.exe" -folders "C:\publish\linux-x64|mylib.dll;*.so" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
 ```
 
 ## Recursive folder scan
@@ -43,22 +43,22 @@ Use `-rfolder` to recursively scan a parent folder and all its subdirectories fo
 
 This is useful in CI where multiple publish outputs (e.g. `win-x64/`, `linux-x64/`, `win-arm64/`) live under a common parent directory and may contain duplicate files.
 
-```bash
-./TownSuite.CodeSigning.Client -rfolder "C:\publish|*.dll;*.exe" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
+```powershell
+.\TownSuite.CodeSigning.Client.exe -rfolder "C:\publish|*.dll;*.exe" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
 ```
 
 Multiple recursive roots with different patterns:
 
-```bash
-./TownSuite.CodeSigning.Client -rfolder "C:\publish|*.dll;*.exe" -rfolder "C:\other|mylib.dll" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
+```powershell
+.\TownSuite.CodeSigning.Client.exe -rfolder "C:\publish|*.dll;*.exe" -rfolder "C:\other|mylib.dll" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
 ```
 
 ## Combining options
 
 All folder modes can be combined. Files from every source are merged, deduplicated by SHA-256, signed once, and the signed copy is copied back to all duplicate locations.
 
-```bash
-./TownSuite.CodeSigning.Client -file "extra.dll" -folder "C:\extras" -folders "C:\publish\win-x64|*.dll;*.exe" -rfolder "C:\publish\shared|*.dll" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
+```powershell
+.\TownSuite.CodeSigning.Client.exe -file "extra.dll" -folder "C:\extras" -folders "C:\publish\win-x64|*.dll;*.exe" -rfolder "C:\publish\shared|*.dll" -timeout 30000 -url "https://localhost:5000/sign" -token "the token"
 ```
 
 
