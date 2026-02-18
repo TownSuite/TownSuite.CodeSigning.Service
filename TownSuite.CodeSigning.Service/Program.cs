@@ -111,17 +111,36 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logg
 });
 app.MapPost("/sign/batch", async (HttpRequest request, Settings settings, ILogger logger) =>
 {
-    return await BatchedSigning.Sign(request.Headers.ToDictionary(), request.Body, settings, logger);
+    var headers = request.Headers.ToDictionary();
+    if (IsDetachedRequest(headers))
+    {
+        return await DetachedBatchedSigning.Sign(headers, request.Body, settings, logger);
+    }
+    return await BatchedSigning.Sign(headers, request.Body, settings, logger);
 });
 
 app.MapGet("/sign/batch", async (HttpRequest request, ILogger logger, string id) =>
 {
-    return await BatchedSigning.Get(request.Headers.ToDictionary(), id, logger);
+    var headers = request.Headers.ToDictionary();
+    if (IsDetachedRequest(headers))
+    {
+        return await DetachedBatchedSigning.Get(headers, id, logger);
+    }
+    return await BatchedSigning.Get(headers, id, logger);
 });
 
 
 app.MapHealthChecks("/healthz");
 app.Run();
+
+static bool IsDetachedRequest(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> headers)
+{
+    if (headers.TryGetValue("X-Detached", out var val))
+    {
+        return string.Equals(val, "1") || string.Equals(val, "true", StringComparison.OrdinalIgnoreCase);
+    }
+    return false;
+}
 
 static void Cleanup(FileInfo workingFilePath, ILogger logger)
 {
