@@ -22,10 +22,11 @@ namespace TownSuite.CodeSigning.Client
         }
 
         private List<(string Id, string FilePath)> TrackedFiles = new();
+        private bool batchDetached = false;
 
 
         public async Task<(string FailedFile, string Message)[]> UploadFiles(bool quickFail, bool ignoreFailures,
-            string[] filepaths)
+            string[] filepaths, bool detached = false)
         {
             var failedUploads = new List<(string FailedFile, string Message)>();
 
@@ -43,6 +44,7 @@ namespace TownSuite.CodeSigning.Client
             string lastFile = filepaths.Last();
             var tasks = new List<Task>();
 
+            batchDetached = detached;
             foreach (string filepath in filepaths)
             {
                 bool failures = false;
@@ -63,18 +65,21 @@ namespace TownSuite.CodeSigning.Client
                         var request = new HttpRequestMessage(HttpMethod.Post, url);
                         request.Headers.Add("X-BatchId", batchId);
                         request.Headers.Add("X-BatchReady", "true");
+                        if (detached) request.Headers.Add("X-Detached", "true");
                         await SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request);
                     }
                     else if (firstFile == filepath)
                     {
                         var request = new HttpRequestMessage(HttpMethod.Post, url);
                         request.Headers.Add("X-BatchId", batchId);
+                        if (detached) request.Headers.Add("X-Detached", "true");
                         await SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request);
                     }
                     else if (lastFile != filepath)
                     {
                         var request = new HttpRequestMessage(HttpMethod.Post, url);
                         request.Headers.Add("X-BatchId", batchId);
+                        if (detached) request.Headers.Add("X-Detached", "true");
                         // if this is not the first or last file, we can send it in parallel
                         tasks.Add(SendRequest(quickFail, ignoreFailures, failedUploads, filepath, request));
                     }
@@ -173,15 +178,27 @@ namespace TownSuite.CodeSigning.Client
 
                 var request = new HttpRequestMessage(HttpMethod.Get, pollUrl);
                 request.Headers.Add("X-BatchId", batchId);
+                if (batchDetached) request.Headers.Add("X-Detached", "true");
 
                 var response = await _client.SendAsync(request);
                 if (response.IsSuccessStatusCode)
                 {
                     await using var resultStream = await response.Content.ReadAsStreamAsync();
-                    await using var fileStream = File.OpenWrite(file.FilePath);
-                    await resultStream.CopyToAsync(fileStream);
-                    goodFiles.Add(file);
-                    Console.WriteLine($"Signed file: {file.FilePath}");
+                    if (batchDetached)
+                    {
+                        var sigPath = file.FilePath + ".sig";
+                        await using var sigStream = File.OpenWrite(sigPath);
+                        await resultStream.CopyToAsync(sigStream);
+                        goodFiles.Add(file);
+                        Console.WriteLine($"Detached signature saved: {sigPath}");
+                    }
+                    else
+                    {
+                        await using var fileStream = File.OpenWrite(file.FilePath);
+                        await resultStream.CopyToAsync(fileStream);
+                        goodFiles.Add(file);
+                        Console.WriteLine($"Signed file: {file.FilePath}");
+                    }
                 }
                 else if ((int)response.StatusCode == 425)
                 {

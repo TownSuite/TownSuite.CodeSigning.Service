@@ -13,6 +13,7 @@ string baseurl = string.Empty;
 string token = string.Empty;
 bool quickFail = false;
 bool ignoreFailures = false;
+bool detached = false;
 int timeoutInMs = 10000;
 int batchTimeoutInSeconds = 1200;
 
@@ -80,6 +81,10 @@ for (int i = 0; i < args.Length; i++)
     else if (string.Equals(args[i], "-ignorefailures", StringComparison.InvariantCultureIgnoreCase))
     {
         ignoreFailures = true;
+    }
+    else if (string.Equals(args[i], "-detached", StringComparison.InvariantCultureIgnoreCase))
+    {
+        detached = true;
     }
     else if (string.Equals(args[i], "-timeout", StringComparison.InvariantCultureIgnoreCase))
     {
@@ -149,7 +154,7 @@ if (!string.IsNullOrWhiteSpace(token))
 try
 {
     bool failures = false;
-    failures = await ProcessFiles(filepaths, url, quickFail, ignoreFailures, folder, folderFilePairs, recursiveFolderFilePairs);
+    failures = await ProcessFiles(filepaths, url, quickFail, ignoreFailures, folder, folderFilePairs, recursiveFolderFilePairs, detached);
 
     if (failures && !ignoreFailures)
     {
@@ -192,6 +197,8 @@ void PrintHelp()
     Console.WriteLine("-token \"the auth token\" or -tokenfile \"path to plain text file holding token\"");
     Console.WriteLine("-quickfail if this is set the program will exit on the first faliure.");
     Console.WriteLine("-ignorefailures if this is set the program will ignore all errors and override quickfail.");
+    Console.WriteLine("-detached");
+    Console.WriteLine("    If set, use detached signatures.");
     Console.WriteLine("-timeout \"10000\"");
     Console.WriteLine("    Timeout is in ms.  Defaults to 10000.   This is per http request.");
     Console.WriteLine("");
@@ -211,7 +218,7 @@ void PrintHelp()
 
 async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, bool ignoreFailures,
     string folder, List<(string Folder, string[] Files)> folderFilePairs,
-    List<(string Folder, string[] Files)> recursiveFolderFilePairs)
+    List<(string Folder, string[] Files)> recursiveFolderFilePairs, bool detached = false)
 {
     var files = new List<string>();
 
@@ -258,7 +265,7 @@ async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, b
         Environment.Exit(-2);
     }
 
-    var uploadFailures = await signer.UploadFiles(quickFail, ignoreFailures, uniqueFiles.ToArray());
+    var uploadFailures = await signer.UploadFiles(quickFail, ignoreFailures, uniqueFiles.ToArray(), detached);
     if (uploadFailures.Length > 0)
     {
         foreach (var result in uploadFailures)

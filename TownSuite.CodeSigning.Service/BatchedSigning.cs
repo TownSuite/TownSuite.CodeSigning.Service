@@ -35,7 +35,7 @@ namespace TownSuite.CodeSigning.Service
                 if (!isBatchJob)
                 {
                     // single file batch, only for backwards compatiblity
-                    ProcessFile(settings, logger, id, workingFolder, [workingFilePath]);
+                    ProcessFile(settings, logger, id, workingFolder, new[] { workingFilePath });
                 }
                 else if (isBatchJob && !string.IsNullOrWhiteSpace(batchReady))
                 {
@@ -75,6 +75,7 @@ namespace TownSuite.CodeSigning.Service
                 {
                     using var signer = new Signer(settings, logger);
                     await Queuing.Semaphore.WaitAsync();
+
                     var results = await signer.SignAsync(workingFolder.FullName, files);
 
                     workingFolder.CreateIfNotExists();
@@ -122,8 +123,8 @@ namespace TownSuite.CodeSigning.Service
             if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, signedFilesIndicator)))
             {
                 var workingFile = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
-                var fileStream = new TempFileStream(workingFile, !isBatchJob ? workingFolder : null);
-                return Results.Stream(fileStream);
+                var workingStream = new TempFileStream(workingFile, !isBatchJob ? workingFolder : null);
+                return Results.Stream(workingStream);
             }
 
             if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error")))
