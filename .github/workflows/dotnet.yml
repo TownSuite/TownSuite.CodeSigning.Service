@@ -16,7 +16,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - name: Build
         run: chmod +x ./build_linux.sh && ./build_linux.sh
       - name: Archive artifacts
@@ -24,15 +24,15 @@ jobs:
         with:
           name: linux-x64
           path: |
-            TownSuite.CodeSigning.Service/bin/Release/net8.0
-            TownSuite.CodeSigning.Client/bin/Release/net8.0/*
+            TownSuite.CodeSigning.Service/bin/Release/net10.0
+            TownSuite.CodeSigning.Client/bin/Release/net10.0/*
           retention-days: 1
       - name: Archive Self Contained Linux Client
         uses: actions/upload-artifact@v6
         with:
           name: linux-x64-client
           path: |
-            TownSuite.CodeSigning.Client/bin/Release/net8.0/linux-x64/publish/
+            TownSuite.CodeSigning.Client/bin/Release/net10.0/linux-x64/publish/
           retention-days: 1
       - name: Archive Self Contained Debian Linux Client
         uses: actions/upload-artifact@v6
@@ -49,7 +49,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
       - name: Build
         run: ./build_windows.ps1
       - name: Archive artifacts
@@ -57,13 +57,13 @@ jobs:
         with:
           name: win-x64
           path: |
-            TownSuite.CodeSigning.Service/bin/Release/net8.0
-            TownSuite.CodeSigning.Client/bin/Release/net8.0/*
+            TownSuite.CodeSigning.Service/bin/Release/net10.0
+            TownSuite.CodeSigning.Client/bin/Release/net10.0/*
           retention-days: 1
       - name: Archive Self Contained Windows Client
         uses: actions/upload-artifact@v6
         with:
           name: win-x64-client
           path: |
-            TownSuite.CodeSigning.Client/bin/Release/net8.0/win-x64/publish/
+            TownSuite.CodeSigning.Client/bin/Release/net10.0/win-x64/publish/
           retention-days: 1
