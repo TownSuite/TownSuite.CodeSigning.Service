@@ -8,7 +8,7 @@ dotnet publish TownSuite.CodeSigning.Client -c Release -r linux-x64 -p:PublishRe
 
 rm -rf /build/linux
 mkdir -p build/linux/opt/townsuite/codesigning/client
-cp -r TownSuite.CodeSigning.Client/bin/Release/net8.0/linux-x64/publish/* build/linux/opt/townsuite/codesigning/client/
+cp -r TownSuite.CodeSigning.Client/bin/Release/net10.0/linux-x64/publish/* build/linux/opt/townsuite/codesigning/client/
 mkdir -p build/linux/usr/bin
 cp -r townsuite-code-signing-client build/linux/usr/bin/townsuite-code-signing-client
 chmod +x build/linux/usr/bin/townsuite-code-signing-client
