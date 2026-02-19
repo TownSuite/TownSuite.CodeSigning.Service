@@ -14,14 +14,14 @@ namespace TownSuite.CodeSigning.Tests
     public class DetachedBatchedSigningTests
     {
         private ILogger _logger;
-        private Settings _settings;
+        private DetachedSignerSettings _detachedSettings;
 
         [SetUp]
         public void Setup()
         {
             _logger = Substitute.For<ILogger>();
-            _settings = OneTimeUnitTestSetup.SignToolSettings;
-            Assert.IsNotNull(_settings, "SignToolSettings must be initialized by test setup");
+            _detachedSettings = OneTimeUnitTestSetup.DetachedSettings;
+            Assert.IsNotNull(_detachedSettings, "DetachedSettings must be initialized by test setup");
         }
 
         [Test]
@@ -31,8 +31,8 @@ namespace TownSuite.CodeSigning.Tests
             using var bodyStream = new MemoryStream(testData);
             var headers = new Dictionary<string, StringValues>();
 
-            var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _settings, _logger);
-            
+            var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _detachedSettings, _logger);
+
             Assert.That(result, Is.InstanceOf<Microsoft.AspNetCore.Http.HttpResults.Ok<string>>());
             var okResult = result as Microsoft.AspNetCore.Http.HttpResults.Ok<string>;
             Assert.That(okResult.StatusCode, Is.EqualTo(200));
@@ -64,9 +64,9 @@ namespace TownSuite.CodeSigning.Tests
                 var testData = new byte[] { (byte)i, 2, 3, 4, 5, 6 };
                 using var bodyStream = new MemoryStream(testData);
 
-                var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _settings, _logger);
+                var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _detachedSettings, _logger);
                 Assert.That(result, Is.InstanceOf<Microsoft.AspNetCore.Http.HttpResults.Ok<string>>());
-                
+
                 var okResult = result as Microsoft.AspNetCore.Http.HttpResults.Ok<string>;
                 fileIds.Add(okResult.Value);
             }
@@ -74,7 +74,7 @@ namespace TownSuite.CodeSigning.Tests
             headers["X-BatchReady"] = "true";
             var finalTestData = new byte[] { 99, 2, 3, 4, 5, 6 };
             using var finalBodyStream = new MemoryStream(finalTestData);
-            var finalResult = await DetachedBatchedSigning.Sign(headers, finalBodyStream, _settings, _logger);
+            var finalResult = await DetachedBatchedSigning.Sign(headers, finalBodyStream, _detachedSettings, _logger);
             Assert.That(finalResult, Is.InstanceOf<Microsoft.AspNetCore.Http.HttpResults.Ok<string>>());
             var finalOkResult = finalResult as Microsoft.AspNetCore.Http.HttpResults.Ok<string>;
             fileIds.Add(finalOkResult.Value);
@@ -98,7 +98,7 @@ namespace TownSuite.CodeSigning.Tests
             using var bodyStream = new MemoryStream(testData);
 
             Assert.ThrowsAsync<InvalidDataException>(async () => 
-                await DetachedBatchedSigning.Sign(headers, bodyStream, _settings, _logger));
+                await DetachedBatchedSigning.Sign(headers, bodyStream, _detachedSettings, _logger));
         }
 
         [Test]
@@ -122,7 +122,7 @@ namespace TownSuite.CodeSigning.Tests
             using var bodyStream = new MemoryStream(testData);
             var headers = new Dictionary<string, StringValues>();
 
-            var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _settings, _logger);
+            var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _detachedSettings, _logger);
             var okResult = result as Microsoft.AspNetCore.Http.HttpResults.Ok<string>;
             string id = okResult.Value;
 
@@ -140,7 +140,7 @@ namespace TownSuite.CodeSigning.Tests
             using var bodyStream = new MemoryStream(testData);
             var headers = new Dictionary<string, StringValues>();
 
-            var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _settings, _logger);
+            var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _detachedSettings, _logger);
 
             Assert.That(result, Is.InstanceOf<Microsoft.AspNetCore.Http.HttpResults.Ok<string>>());
             var okResult = result as Microsoft.AspNetCore.Http.HttpResults.Ok<string>;
@@ -154,7 +154,7 @@ namespace TownSuite.CodeSigning.Tests
             using var bodyStream = new NonSeekableMemoryStream(testData);
             var headers = new Dictionary<string, StringValues>();
 
-            var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _settings, _logger);
+            var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _detachedSettings, _logger);
 
             Assert.That(result, Is.InstanceOf<Microsoft.AspNetCore.Http.HttpResults.Ok<string>>());
         }
@@ -171,14 +171,14 @@ namespace TownSuite.CodeSigning.Tests
             var testData = new byte[] { 7, 8, 9 };
             using var bodyStream = new MemoryStream(testData);
 
-            var signResult = await DetachedBatchedSigning.Sign(headers, bodyStream, _settings, _logger);
+            var signResult = await DetachedBatchedSigning.Sign(headers, bodyStream, _detachedSettings, _logger);
             var okResult = signResult as Microsoft.AspNetCore.Http.HttpResults.Ok<string>;
             string fileId = okResult.Value;
 
             headers["X-BatchReady"] = "true";
             var finalData = new byte[] { 10, 11, 12 };
             using var finalStream = new MemoryStream(finalData);
-            await DetachedBatchedSigning.Sign(headers, finalStream, _settings, _logger);
+            await DetachedBatchedSigning.Sign(headers, finalStream, _detachedSettings, _logger);
 
             byte[] sigBytes = await WaitAndRetrieveSignature(fileId, headers);
             Assert.That(sigBytes.Length, Is.GreaterThan(0));
@@ -195,12 +195,12 @@ namespace TownSuite.CodeSigning.Tests
 
             var testData1 = new byte[] { 1, 2, 3 };
             using var stream1 = new MemoryStream(testData1);
-            var result1 = await DetachedBatchedSigning.Sign(headers1, stream1, _settings, _logger);
+            var result1 = await DetachedBatchedSigning.Sign(headers1, stream1, _detachedSettings, _logger);
             var id1 = (result1 as Microsoft.AspNetCore.Http.HttpResults.Ok<string>).Value;
 
             var testData2 = new byte[] { 4, 5, 6 };
             using var stream2 = new MemoryStream(testData2);
-            var result2 = await DetachedBatchedSigning.Sign(headers2, stream2, _settings, _logger);
+            var result2 = await DetachedBatchedSigning.Sign(headers2, stream2, _detachedSettings, _logger);
             var id2 = (result2 as Microsoft.AspNetCore.Http.HttpResults.Ok<string>).Value;
 
             Assert.That(id1, Is.Not.EqualTo(id2));
@@ -208,12 +208,12 @@ namespace TownSuite.CodeSigning.Tests
             headers1["X-BatchReady"] = "true";
             var finalData1 = new byte[] { 7, 8, 9 };
             using var finalStream1 = new MemoryStream(finalData1);
-            await DetachedBatchedSigning.Sign(headers1, finalStream1, _settings, _logger);
+            await DetachedBatchedSigning.Sign(headers1, finalStream1, _detachedSettings, _logger);
 
             headers2["X-BatchReady"] = "true";
             var finalData2 = new byte[] { 10, 11, 12 };
             using var finalStream2 = new MemoryStream(finalData2);
-            await DetachedBatchedSigning.Sign(headers2, finalStream2, _settings, _logger);
+            await DetachedBatchedSigning.Sign(headers2, finalStream2, _detachedSettings, _logger);
 
             byte[] sig1 = await WaitAndRetrieveSignature(id1, headers1);
             byte[] sig2 = await WaitAndRetrieveSignature(id2, headers2);
@@ -237,14 +237,14 @@ namespace TownSuite.CodeSigning.Tests
             {
                 var testData = new byte[] { (byte)i, 2, 3 };
                 using var bodyStream = new MemoryStream(testData);
-                var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _settings, _logger);
+                var result = await DetachedBatchedSigning.Sign(headers, bodyStream, _detachedSettings, _logger);
                 fileIds.Add((result as Microsoft.AspNetCore.Http.HttpResults.Ok<string>).Value);
             }
 
             headers["X-BatchReady"] = "true";
             var finalData = new byte[] { 99, 100, 101 };
             using var finalStream = new MemoryStream(finalData);
-            var finalResult = await DetachedBatchedSigning.Sign(headers, finalStream, _settings, _logger);
+            var finalResult = await DetachedBatchedSigning.Sign(headers, finalStream, _detachedSettings, _logger);
             fileIds.Add((finalResult as Microsoft.AspNetCore.Http.HttpResults.Ok<string>).Value);
 
             foreach (var fileId in fileIds)

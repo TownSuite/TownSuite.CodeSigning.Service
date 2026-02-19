@@ -15,8 +15,8 @@ namespace TownSuite.CodeSigning.Tests
         public async Task SignDetached_WithPfxFallback_CreatesValidDetachedSignature()
         {
             // Arrange - settings and test cert are prepared by OneTimeUnitTestSetup
-            var settings = OneTimeUnitTestSetup.SignToolSettings;
-            Assert.IsNotNull(settings, "SignToolSettings must be initialized by test setup");
+            var settings = OneTimeUnitTestSetup.DetachedSettings;
+            Assert.IsNotNull(settings, "DetachedSettings must be initialized by test setup");
 
             var logger = Substitute.For<ILogger>();
 

@@ -8,7 +8,7 @@ namespace TownSuite.CodeSigning.Service
     /// </summary>
     public static class DetachedBatchedSigning
     {
-        public static async Task<IResult> Sign(Dictionary<string, StringValues> headers, Stream body, Settings settings, ILogger logger)
+        public static async Task<IResult> Sign(Dictionary<string, StringValues> headers, Stream body, DetachedSignerSettings detachedSignerSettings, ILogger logger)
         {
             headers.TryGetValue("X-BatchId", out var batchId);
             headers.TryGetValue("X-BatchReady", out var batchReady);
@@ -30,7 +30,7 @@ namespace TownSuite.CodeSigning.Service
 
                 if (!isBatchJob)
                 {
-                    ProcessFile(settings, logger, id, workingFolder, workingFilePath);
+                    ProcessFile(detachedSignerSettings, logger, id, workingFolder, workingFilePath);
                 }
                 else if (isBatchJob && !string.IsNullOrWhiteSpace(batchReady))
                 {
@@ -38,7 +38,7 @@ namespace TownSuite.CodeSigning.Service
                     foreach (var file in files)
                     {
                         string fileId = Path.GetFileNameWithoutExtension(file);
-                        ProcessFile(settings, logger, fileId, workingFolder, Path.Combine(workingFolder.FullName, file));
+                        ProcessFile(detachedSignerSettings, logger, fileId, workingFolder, Path.Combine(workingFolder.FullName, file));
                     }
 
                     // Write a batch-level signed indicator once all files are queued
@@ -54,7 +54,7 @@ namespace TownSuite.CodeSigning.Service
             }
         }
 
-        private static void ProcessFile(Settings settings, ILogger logger, string id, DirectoryInfo workingFolder, string inputFilePath)
+        private static void ProcessFile(DetachedSignerSettings detachedSignerSettings, ILogger logger, string id, DirectoryInfo workingFolder, string inputFilePath)
         {
             BackgroundQueue.Instance.QueueThread(async () =>
             {
@@ -63,7 +63,7 @@ namespace TownSuite.CodeSigning.Service
                     await Queuing.Semaphore.WaitAsync();
 
                     var sigPath = Path.Combine(workingFolder.FullName, $"{id}.sig");
-                    var detachedSigner = new DetachedSigner(settings, logger);
+                    var detachedSigner = new DetachedSigner(detachedSignerSettings, logger);
                     var result = await detachedSigner.SignDetachedAsync(inputFilePath, sigPath);
 
                     workingFolder.CreateIfNotExists();

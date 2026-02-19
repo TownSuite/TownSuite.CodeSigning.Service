@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<Settings>(s => builder.Configuration.GetSection("Settings").Get<Settings>());
+builder.Services.AddSingleton<DetachedSignerSettings>(s => builder.Configuration.GetSection("DetachedSignerSettings").Get<DetachedSignerSettings>());
 builder.WebHost.UseKestrel(o =>
 {
     var settings = builder.Configuration.GetSection("Settings").Get<Settings>();
@@ -109,12 +110,12 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logg
         Cleanup(workingFilePath, logger);
     }
 });
-app.MapPost("/sign/batch", async (HttpRequest request, Settings settings, ILogger logger) =>
+app.MapPost("/sign/batch", async (HttpRequest request, Settings settings, DetachedSignerSettings detachedSignerSettings, ILogger logger) =>
 {
     var headers = request.Headers.ToDictionary();
     if (IsDetachedRequest(headers))
     {
-        return await DetachedBatchedSigning.Sign(headers, request.Body, settings, logger);
+        return await DetachedBatchedSigning.Sign(headers, request.Body, detachedSignerSettings, logger);
     }
     return await BatchedSigning.Sign(headers, request.Body, settings, logger);
 });

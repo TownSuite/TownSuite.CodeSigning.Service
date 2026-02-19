@@ -12,6 +12,7 @@ namespace TownSuite.CodeSigning.Tests
         static readonly string SignToolPath = System.Environment.GetEnvironmentVariable("SIGNTOOL_PATH")
             ?? "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\signtool.exe";
         public static Settings? SignToolSettings { get; private set; }
+        public static DetachedSignerSettings? DetachedSettings { get; private set; }
 
         [OneTimeSetUp]
         public void Setup()
@@ -24,6 +25,12 @@ namespace TownSuite.CodeSigning.Tests
                 SignToolPath = SignToolPath,
                 SigntoolTimeoutInMs = 10000,
                 SemaphoreSlimProcessPerCpuLimit=1
+            };
+            DetachedSettings = new DetachedSignerSettings()
+            {
+                CertificateFilePath = "{BaseDirectory}testcert.pfx",
+                CertificatePassword = password,
+                DigestAlgorithm = "SHA256"
             };
 
             CodeSigning.Service.Queuing.SetSemaphore(SignToolSettings);

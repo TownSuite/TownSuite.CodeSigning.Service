@@ -1,8 +1,6 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Security.Cryptography.X509Certificates;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -13,10 +11,10 @@ namespace TownSuite.CodeSigning.Service
 {
     public class DetachedSigner
     {
-        readonly Settings _settings;
+        readonly DetachedSignerSettings _settings;
         readonly ILogger _logger;
 
-        public DetachedSigner(Settings settings, ILogger logger)
+        public DetachedSigner(DetachedSignerSettings settings, ILogger logger)
         {
             _settings = settings;
             _logger = logger;
@@ -24,62 +22,34 @@ namespace TownSuite.CodeSigning.Service
 
         public async Task<(bool IsSigned, string Message)> SignDetachedAsync(string inputFilePath, string signatureFilePath)
         {
-            // Try locate certificate in store by thumbprint (/sha1)
             System.Security.Cryptography.X509Certificates.X509Certificate2 storeCert = null;
             try
             {
-                // Parse SignToolOptions to find certificate-related options
-                string opts = _settings?.SignToolOptions ?? string.Empty;
-                opts = opts.Replace("{BaseDirectory}", AppContext.BaseDirectory + System.IO.Path.DirectorySeparatorChar);
-
-                string GetOption(string name)
-                {
-                    try
-                    {
-                        var pattern = @"(?:(?:/|-)" + Regex.Escape(name) + @")(?:[:\s]+)(?:""(?<v>[^""]+)""|(?<v>[^\s]+))";
-                        var rx = new Regex(pattern, RegexOptions.IgnoreCase);
-                        var m = rx.Match(opts);
-                        if (m.Success) return m.Groups["v"].Value;
-                    }
-                    catch { }
-                    return null;
-                }
-
-                var sha1 = GetOption("sha1");
-                var subject = GetOption("n");
-                var fpath = GetOption("f");
-                var pfxPass = GetOption("p");
-                var digestAlgorithm = GetDigestAlgorithmOid(GetOption("fd"));
-                var cspName = GetOption("csp");
-                var keyContainer = GetOption("kc");
+                var thumbprint = _settings.Thumbprint;
+                var subject = _settings.SubjectName;
+                var fpath = _settings.CertificateFilePath?
+                    .Replace("{BaseDirectory}", AppContext.BaseDirectory + System.IO.Path.DirectorySeparatorChar);
+                var pfxPass = _settings.CertificatePassword;
+                var digestAlgorithm = GetDigestAlgorithmOid(_settings.DigestAlgorithm);
+                var cspName = _settings.CspName;
+                var keyContainer = _settings.KeyContainer;
+                var tokenPin = _settings.TokenPin;
                 bool useCsp = !string.IsNullOrWhiteSpace(cspName) && !string.IsNullOrWhiteSpace(keyContainer);
 
-                // Extract token PIN from {{...}} in the key container value (signtool convention for hardware tokens)
-                string tokenPin = null;
-                string cspKeyContainer = keyContainer;
-                if (useCsp)
+                // Try locate certificate in store by thumbprint
+                if (!string.IsNullOrWhiteSpace(thumbprint))
                 {
-                    var pinMatch = Regex.Match(keyContainer, @"\{\{(?<pin>[^}]*)\}\}");
-                    if (pinMatch.Success)
-                    {
-                        tokenPin = pinMatch.Groups["pin"].Value;
-                        cspKeyContainer = keyContainer.Remove(pinMatch.Index, pinMatch.Length);
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(sha1))
-                {
-                    var t = sha1.Replace(" ", "").ToUpperInvariant();
+                    var t = thumbprint.Replace(" ", "").ToUpperInvariant();
                     storeCert = FindCertByThumbprint(System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine, t)
                                 ?? FindCertByThumbprint(System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser, t);
                 }
 
-                // If /f points to a .cer, try to use that to find the certificate in store (useful when signtool references a public cert file)
+                // If CertificateFilePath points to a .cer, try to use that to find the certificate in store
                 if (storeCert == null && !string.IsNullOrWhiteSpace(fpath))
                 {
                     try
                     {
-                        var expanded = Environment.ExpandEnvironmentVariables(fpath.Trim('"'));
+                        var expanded = Environment.ExpandEnvironmentVariables(fpath);
                         if (File.Exists(expanded) && string.Equals(Path.GetExtension(expanded), ".cer", StringComparison.OrdinalIgnoreCase))
                         {
                             using var certFromFile = new System.Security.Cryptography.X509Certificates.X509Certificate2(expanded);
@@ -90,7 +60,6 @@ namespace TownSuite.CodeSigning.Service
                                             ?? FindCertByThumbprint(System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser, t);
                             }
                         }
-
                     }
                     catch { /* ignore and continue */ }
                 }
@@ -98,9 +67,8 @@ namespace TownSuite.CodeSigning.Service
                 // If subject name provided, search by subject
                 if (storeCert == null && !string.IsNullOrWhiteSpace(subject))
                 {
-                    var name = subject.Trim('"');
-                    storeCert = FindCertBySubjectName(System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine, name)
-                                ?? FindCertBySubjectName(System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser, name);
+                    storeCert = FindCertBySubjectName(System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine, subject)
+                                ?? FindCertBySubjectName(System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser, subject);
                 }
 
                 // If we found a cert in store and it has a private key, create a detached PKCS#7 with SignedCms.
@@ -115,7 +83,7 @@ namespace TownSuite.CodeSigning.Service
                     if (useCsp && !string.IsNullOrEmpty(tokenPin))
                     {
                         using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(
-                            BuildCspParameters(cspName, cspKeyContainer, tokenPin));
+                            BuildCspParameters(cspName, keyContainer, tokenPin));
                         using var certWithKey = storeCert.CopyWithPrivateKey(rsa);
                         var signer = new System.Security.Cryptography.Pkcs.CmsSigner(
                             System.Security.Cryptography.Pkcs.SubjectIdentifierType.IssuerAndSerialNumber, certWithKey)
@@ -144,7 +112,7 @@ namespace TownSuite.CodeSigning.Service
                 {
                     try
                     {
-                        var expanded = Environment.ExpandEnvironmentVariables(fpath.Trim('"'));
+                        var expanded = Environment.ExpandEnvironmentVariables(fpath);
                         if (File.Exists(expanded) && (expanded.EndsWith(".pfx", StringComparison.OrdinalIgnoreCase) || expanded.EndsWith(".p12", StringComparison.OrdinalIgnoreCase)))
                         {
                             using var pfxCert = new System.Security.Cryptography.X509Certificates.X509Certificate2(
@@ -152,7 +120,7 @@ namespace TownSuite.CodeSigning.Service
                                 pfxPass ?? string.Empty,
                                 System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet);
                             using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(
-                                BuildCspParameters(cspName, cspKeyContainer, tokenPin));
+                                BuildCspParameters(cspName, keyContainer, tokenPin));
                             using var certWithKey = pfxCert.CopyWithPrivateKey(rsa);
 
                             var content = await File.ReadAllBytesAsync(inputFilePath);
@@ -175,12 +143,12 @@ namespace TownSuite.CodeSigning.Service
                     }
                 }
 
-                // Fallback: if /f references a PFX, try to load it with provided password (/p)
+                // Fallback: if CertificateFilePath references a PFX, try to load it with provided password
                 if (!string.IsNullOrWhiteSpace(fpath))
                 {
                     try
                     {
-                        var expanded = Environment.ExpandEnvironmentVariables(fpath.Trim('"'));
+                        var expanded = Environment.ExpandEnvironmentVariables(fpath);
                         if (File.Exists(expanded) && (expanded.EndsWith(".pfx", StringComparison.OrdinalIgnoreCase) || expanded.EndsWith(".p12", StringComparison.OrdinalIgnoreCase)))
                         {
                             using var pfx = new System.Security.Cryptography.X509Certificates.X509Certificate2(
@@ -210,7 +178,7 @@ namespace TownSuite.CodeSigning.Service
                     }
                 }
 
-                return (false, "No usable certificate/private key found for detached signing (parsed from SignToolOptions)");
+                return (false, "No usable certificate/private key found for detached signing");
             }
             catch (Exception ex)
             {
@@ -225,13 +193,14 @@ namespace TownSuite.CodeSigning.Service
 
         /// <summary>
         /// Creates CspParameters for a hardware token CSP, optionally setting the token PIN via KeyPassword.
+        /// Resolves the correct provider type from the Windows registry to avoid
+        /// "Provider type does not match registered value" errors with hardware tokens.
         /// </summary>
         private static System.Security.Cryptography.CspParameters BuildCspParameters(string providerName, string containerName, string pin)
         {
-            var cspParams = new System.Security.Cryptography.CspParameters
+            int providerType = GetRegisteredProviderType(providerName);
+            var cspParams = new System.Security.Cryptography.CspParameters(providerType, providerName, containerName)
             {
-                ProviderName = providerName,
-                KeyContainerName = containerName,
                 Flags = System.Security.Cryptography.CspProviderFlags.UseExistingKey
             };
             if (!string.IsNullOrEmpty(pin))
@@ -243,6 +212,31 @@ namespace TownSuite.CodeSigning.Service
                 cspParams.KeyPassword = securePin;
             }
             return cspParams;
+        }
+
+        /// <summary>
+        /// Looks up the registered provider type for a CSP name from the Windows registry.
+        /// Falls back to PROV_RSA_AES (24) if the lookup fails.
+        /// </summary>
+        private static int GetRegisteredProviderType(string providerName)
+        {
+            const int PROV_RSA_AES = 24;
+            if (string.IsNullOrWhiteSpace(providerName))
+                return PROV_RSA_AES;
+
+            try
+            {
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                    $@"SOFTWARE\Microsoft\Cryptography\Defaults\Provider\{providerName}");
+                if (key?.GetValue("Type") is int registeredType)
+                    return registeredType;
+            }
+            catch
+            {
+                // Registry lookup may fail on non-Windows or with restricted permissions.
+            }
+
+            return PROV_RSA_AES;
         }
 
         private System.Security.Cryptography.X509Certificates.X509Certificate2 FindCertByThumbprint(System.Security.Cryptography.X509Certificates.StoreLocation location, string thumbprint)
