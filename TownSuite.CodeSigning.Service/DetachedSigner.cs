@@ -30,7 +30,7 @@ namespace TownSuite.CodeSigning.Service
             {
                 // Parse SignToolOptions to find certificate-related options
                 string opts = _settings?.SignToolOptions ?? string.Empty;
-                opts = opts.Replace("{BaseDirectory}", AppContext.BaseDirectory ?? string.Empty);
+                opts = opts.Replace("{BaseDirectory}", AppContext.BaseDirectory + System.IO.Path.DirectorySeparatorChar);
 
                 string GetOption(string name)
                 {

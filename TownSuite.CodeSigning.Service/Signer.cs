@@ -39,13 +39,13 @@ namespace TownSuite.CodeSigning.Service
             {
                 p.StartInfo.Arguments = _settings.SignToolOptions
                     .Replace("{FilePath}", files[0])
-                    .Replace("{BaseDirectory}", AppContext.BaseDirectory);
+                    .Replace("{BaseDirectory}", AppContext.BaseDirectory + System.IO.Path.DirectorySeparatorChar);
             }
             else
             {
                 p.StartInfo.Arguments = _settings.SignToolOptions
                     .Replace("\"{FilePath}\"", string.Join(" ", files))
-                    .Replace("{BaseDirectory}", AppContext.BaseDirectory);
+                    .Replace("{BaseDirectory}", AppContext.BaseDirectory + System.IO.Path.DirectorySeparatorChar);
             }
 
             p.StartInfo.WorkingDirectory = workingDir;
