@@ -50,6 +50,9 @@ namespace TownSuite.CodeSigning.Service
                 var fpath = GetOption("f");
                 var pfxPass = GetOption("p");
                 var digestAlgorithm = GetDigestAlgorithmOid(GetOption("fd"));
+                var cspName = GetOption("csp");
+                var keyContainer = GetOption("kc");
+                bool useCsp = !string.IsNullOrWhiteSpace(cspName) && !string.IsNullOrWhiteSpace(keyContainer);
         
                 if (!string.IsNullOrWhiteSpace(sha1))
                 {
@@ -87,7 +90,8 @@ namespace TownSuite.CodeSigning.Service
                                 ?? FindCertBySubjectName(System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser, name);
                 }
 
-                // If we found a cert in store and it has a private key, create a detached PKCS#7 with SignedCms
+                // If we found a cert in store and it has a private key, create a detached PKCS#7 with SignedCms.
+                // When a CSP is involved (e.g., hardware token), silent must be false to allow the provider to operate.
                 if (storeCert != null && storeCert.HasPrivateKey)
                 {
                     var content = await File.ReadAllBytesAsync(inputFilePath);
@@ -97,10 +101,51 @@ namespace TownSuite.CodeSigning.Service
                     {
                         DigestAlgorithm = digestAlgorithm
                     };
-                    signedCms.ComputeSignature(signer, silent: true);
+                    signedCms.ComputeSignature(signer, silent: !useCsp);
                     var outBytes = signedCms.Encode();
                     await File.WriteAllBytesAsync(signatureFilePath, outBytes);
                     return (true, string.Empty);
+                }
+
+                // CSP-based signing: load certificate from PFX and use CSP/key container for the private key (e.g., hardware token)
+                if (useCsp && !string.IsNullOrWhiteSpace(fpath))
+                {
+                    try
+                    {
+                        var expanded = Environment.ExpandEnvironmentVariables(fpath.Trim('"'));
+                        if (File.Exists(expanded) && (expanded.EndsWith(".pfx", StringComparison.OrdinalIgnoreCase) || expanded.EndsWith(".p12", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            using var pfxCert = new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                                expanded,
+                                pfxPass ?? string.Empty,
+                                System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet);
+                            var cspParams = new System.Security.Cryptography.CspParameters
+                            {
+                                ProviderName = cspName,
+                                KeyContainerName = keyContainer,
+                                Flags = System.Security.Cryptography.CspProviderFlags.UseExistingKey
+                            };
+                            using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(cspParams);
+                            using var certWithKey = pfxCert.CopyWithPrivateKey(rsa);
+
+                            var content = await File.ReadAllBytesAsync(inputFilePath);
+                            var contentInfo = new System.Security.Cryptography.Pkcs.ContentInfo(content);
+                            var signedCms = new System.Security.Cryptography.Pkcs.SignedCms(contentInfo, detached: true);
+                            var signer = new System.Security.Cryptography.Pkcs.CmsSigner(
+                                System.Security.Cryptography.Pkcs.SubjectIdentifierType.IssuerAndSerialNumber, certWithKey)
+                            {
+                                DigestAlgorithm = digestAlgorithm
+                            };
+                            signedCms.ComputeSignature(signer, silent: false);
+                            var outBytes = signedCms.Encode();
+                            await File.WriteAllBytesAsync(signatureFilePath, outBytes);
+                            return (true, string.Empty);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to use CSP-based signing with PFX certificate");
+                    }
                 }
 
                 // Fallback: if /f references a PFX, try to load it with provided password (/p)
