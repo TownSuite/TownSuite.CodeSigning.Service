@@ -53,7 +53,20 @@ namespace TownSuite.CodeSigning.Service
                 var cspName = GetOption("csp");
                 var keyContainer = GetOption("kc");
                 bool useCsp = !string.IsNullOrWhiteSpace(cspName) && !string.IsNullOrWhiteSpace(keyContainer);
-        
+
+                // Extract token PIN from {{...}} in the key container value (signtool convention for hardware tokens)
+                string tokenPin = null;
+                string cspKeyContainer = keyContainer;
+                if (useCsp)
+                {
+                    var pinMatch = Regex.Match(keyContainer, @"\{\{(?<pin>[^}]*)\}\}");
+                    if (pinMatch.Success)
+                    {
+                        tokenPin = pinMatch.Groups["pin"].Value;
+                        cspKeyContainer = keyContainer.Remove(pinMatch.Index, pinMatch.Length);
+                    }
+                }
+
                 if (!string.IsNullOrWhiteSpace(sha1))
                 {
                     var t = sha1.Replace(" ", "").ToUpperInvariant();
@@ -91,17 +104,36 @@ namespace TownSuite.CodeSigning.Service
                 }
 
                 // If we found a cert in store and it has a private key, create a detached PKCS#7 with SignedCms.
-                // When a CSP is involved (e.g., hardware token), silent must be false to allow the provider to operate.
+                // When a CSP with PIN is available, supply the PIN to avoid interactive prompts.
+                // When a CSP is specified without a PIN, use non-silent mode to allow the provider to prompt.
                 if (storeCert != null && storeCert.HasPrivateKey)
                 {
                     var content = await File.ReadAllBytesAsync(inputFilePath);
                     var contentInfo = new System.Security.Cryptography.Pkcs.ContentInfo(content);
                     var signedCms = new System.Security.Cryptography.Pkcs.SignedCms(contentInfo, detached: true);
-                    var signer = new System.Security.Cryptography.Pkcs.CmsSigner(System.Security.Cryptography.Pkcs.SubjectIdentifierType.IssuerAndSerialNumber, storeCert)
+
+                    if (useCsp && !string.IsNullOrEmpty(tokenPin))
                     {
-                        DigestAlgorithm = digestAlgorithm
-                    };
-                    signedCms.ComputeSignature(signer, silent: !useCsp);
+                        using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(
+                            BuildCspParameters(cspName, cspKeyContainer, tokenPin));
+                        using var certWithKey = storeCert.CopyWithPrivateKey(rsa);
+                        var signer = new System.Security.Cryptography.Pkcs.CmsSigner(
+                            System.Security.Cryptography.Pkcs.SubjectIdentifierType.IssuerAndSerialNumber, certWithKey)
+                        {
+                            DigestAlgorithm = digestAlgorithm
+                        };
+                        signedCms.ComputeSignature(signer, silent: true);
+                    }
+                    else
+                    {
+                        var signer = new System.Security.Cryptography.Pkcs.CmsSigner(
+                            System.Security.Cryptography.Pkcs.SubjectIdentifierType.IssuerAndSerialNumber, storeCert)
+                        {
+                            DigestAlgorithm = digestAlgorithm
+                        };
+                        signedCms.ComputeSignature(signer, silent: !useCsp);
+                    }
+
                     var outBytes = signedCms.Encode();
                     await File.WriteAllBytesAsync(signatureFilePath, outBytes);
                     return (true, string.Empty);
@@ -119,13 +151,8 @@ namespace TownSuite.CodeSigning.Service
                                 expanded,
                                 pfxPass ?? string.Empty,
                                 System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet);
-                            var cspParams = new System.Security.Cryptography.CspParameters
-                            {
-                                ProviderName = cspName,
-                                KeyContainerName = keyContainer,
-                                Flags = System.Security.Cryptography.CspProviderFlags.UseExistingKey
-                            };
-                            using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(cspParams);
+                            using var rsa = new System.Security.Cryptography.RSACryptoServiceProvider(
+                                BuildCspParameters(cspName, cspKeyContainer, tokenPin));
                             using var certWithKey = pfxCert.CopyWithPrivateKey(rsa);
 
                             var content = await File.ReadAllBytesAsync(inputFilePath);
@@ -136,7 +163,7 @@ namespace TownSuite.CodeSigning.Service
                             {
                                 DigestAlgorithm = digestAlgorithm
                             };
-                            signedCms.ComputeSignature(signer, silent: false);
+                            signedCms.ComputeSignature(signer, silent: !string.IsNullOrEmpty(tokenPin));
                             var outBytes = signedCms.Encode();
                             await File.WriteAllBytesAsync(signatureFilePath, outBytes);
                             return (true, string.Empty);
@@ -194,6 +221,28 @@ namespace TownSuite.CodeSigning.Service
             {
                 storeCert?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Creates CspParameters for a hardware token CSP, optionally setting the token PIN via KeyPassword.
+        /// </summary>
+        private static System.Security.Cryptography.CspParameters BuildCspParameters(string providerName, string containerName, string pin)
+        {
+            var cspParams = new System.Security.Cryptography.CspParameters
+            {
+                ProviderName = providerName,
+                KeyContainerName = containerName,
+                Flags = System.Security.Cryptography.CspProviderFlags.UseExistingKey
+            };
+            if (!string.IsNullOrEmpty(pin))
+            {
+                var securePin = new System.Security.SecureString();
+                foreach (char c in pin)
+                    securePin.AppendChar(c);
+                securePin.MakeReadOnly();
+                cspParams.KeyPassword = securePin;
+            }
+            return cspParams;
         }
 
         private System.Security.Cryptography.X509Certificates.X509Certificate2 FindCertByThumbprint(System.Security.Cryptography.X509Certificates.StoreLocation location, string thumbprint)
