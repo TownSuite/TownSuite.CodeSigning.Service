@@ -8,6 +8,20 @@ Open powershell and run:
 $env:ASPNETCORE_URLS="http://+:5000"; .\TownSuite.CodeSigning.Service.exe
 ```
 
+## Create and use a Self signed cert for the server
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -keyout server.key -out server.crt -days 365 -subj "/C=US/ST=State/L=City/O=YourOrganization/CN=YourName"
+
+
+openssl pkcs12 -export -out certificate.pfx -inkey server.key -in server.crt
+```
+
+use the cert
+```powershelll
+$env:ASPNETCORE_URLS="http://+:5000;https://+:5001";$env:ASPNETCORE_Kestrel__Certificates__Default__Password="PLACEHOLDER"; $env:ASPNETCORE_Kestrel__Certificates__Default__Path: "/path/to/placeholder/certificate.pfx" .\TownSuite.CodeSigning.Service.exe
+```
+
 # curl example
 
 ```bash
@@ -123,4 +137,100 @@ For increased performance add the services working directory to the windows defe
 ```powershell
 Add-MpPreference -ExclusionPath "C:\Users\[USER]\AppData\Local\Temp\1\townsuite\codesigning"
 ```
+
+
+
+
+# OpenSSL
+
+
+## Definitions
+### Certificate & Key Extensions
+| Extension | 	Purpose |	Format/Encoding|
+|---|---|---|
+|.pem	| Generic container for any cryptographic data. |	Text-based (Base64). Starts with -----BEGIN....
+|.crt	| Standard "Certificate" file. Common in Linux/Unix. | Usually PEM (text), but can be DER (binary).
+|.cer	| Standard "Certificate" file. Common in Windows.	| Usually DER (binary), but can be PEM (text).
+|.key	| Conventional name for a Private Key. | Usually PEM (text). Should be kept secret.
+
+Key distinction: .crt and .cer are almost interchangeable; if one doesn't work, renaming the extension often fixes it unless the encoding (binary vs. text) is wrong for the application
+
+### Signature Extensions
+- `.p7s` (PKCS#7 Signature)
+  - Standard: The formal extension for a PKCS#7/CMS detached signature.
+- `.sig` (Generic Signature)
+  - Standard: No single technical standard; it is a generic naming convention.
+
+
+
+## create a cert for detached signatures
+
+
+```bash
+sudo apt install -y osslsigncode openssl libengine-pkcs11-openssl gnutls-bin xxd
+```
+
+- https://github.com/mtrojnar/osslsigncode/releases/download/2.13/osslsigncode-2.13-windows-x64-mingw.zip
+`sha256:c6d3ec8f383a6ed204503a9d4445788f2d3e71da87f3604c42e40167ad9ceb8e`
+
+
+- https://github.com/OpenSC/libp11/releases
+- https://slproweb.com/products/Win32OpenSSL.html
+
+
+### Create a Self-Signed Certificate 
+
+- key is private, keep safe
+- crt is for public verification, distribute widely
+
+rsa example
+```bash
+openssl genrsa -aes256 -out server.key 4096
+openssl req -x509 -nodes -key server.key -out server.crt -days 365 -subj "/C=US/ST=State/L=City/O=YourOrganization/CN=YourName"
+```
+
+mldsa65 example
+
+```bash
+openssl genpkey -aes256 -algorithm mldsa65 -out server.key
+openssl req -x509 -nodes -key server.key -out server.crt -days 365 -nodes -subj "/C=US/ST=State/L=City/O=YourOrganization/CN=YourName"
+```
+
+
+### create a detached signature
+
+```bash
+open cms -sign -in "{FilePath}" -signer "/path/to/server.crt" -inkey "/path/to/server.key" -keyform P12 -passin pass:password -out "{FilePath}.sig" -outform DER -md sha256
+```
+
+### Timestamp a detached signature
+
+```bash
+osslsigncode add -t "http://timestamp.digicert.com" -in "{FilePath}.sig" -out "{FilePath}.timestamped.sig"
+```
+
+### Inspecting the signature
+
+```bash
+openssl pkcs7 -inform DER -in signature.sig -print_certs -text -noout
+```
+
+
+### extract private key and public cer from a pfx
+
+#### extract unencrypted private key
+```bash
+openssl pkcs12 -in "server.pfx" -nocerts -nodes -out "server.key"
+```
+
+#### extract certificate(s) in PEM
+```bash
+openssl pkcs12 -in "server.pfx" -nokeys -out "server.cer"
+```
+
+### verify a zip file
+
+```bash
+openssl cms -verify -binary -inform DER -in archive.zip.sig -content archive.zip -CAfile server.cer > /dev/null
+
 

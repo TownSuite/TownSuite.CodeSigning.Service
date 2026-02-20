@@ -12,7 +12,6 @@ using Microsoft.Extensions.Logging;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<Settings>(s => builder.Configuration.GetSection("Settings").Get<Settings>());
-builder.Services.AddSingleton<DetachedSignerSettings>(s => builder.Configuration.GetSection("DetachedSignerSettings").Get<DetachedSignerSettings>());
 builder.WebHost.UseKestrel(o =>
 {
     var settings = builder.Configuration.GetSection("Settings").Get<Settings>();
@@ -87,9 +86,9 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logg
             await request.Body.CopyToAsync(fileStream);
         }
 
-        using var signer = new Signer(settings, logger);
+        var signer = new Signer(settings, logger);
         await Queuing.Semaphore.WaitAsync();
-        var results = await signer.SignAsync(workingFilePath.Directory.FullName , [workingFilePath.FullName]);
+        var results = await signer.SignAsync(workingFilePath.Directory.FullName, [workingFilePath.FullName]);
 
         if (results.IsSigned)
         {
@@ -110,26 +109,30 @@ app.MapPost("/sign", async (HttpRequest request, Settings settings, ILogger logg
         Cleanup(workingFilePath, logger);
     }
 });
-app.MapPost("/sign/batch", async (HttpRequest request, Settings settings, DetachedSignerSettings detachedSignerSettings, ILogger logger) =>
+app.MapPost("/sign/batch", async (HttpRequest request, Settings settings, ILogger logger) =>
 {
     var headers = request.Headers.ToDictionary();
-    if (IsDetachedRequest(headers))
-    {
-        return await DetachedBatchedSigning.Sign(headers, request.Body, detachedSignerSettings, logger);
-    }
-    return await BatchedSigning.Sign(headers, request.Body, settings, logger);
+    ISigner signer = GetSigner(request, settings, logger,  headers);
+    return await BatchedSigning.Sign(headers, request.Body, logger, signer);
 });
 
-app.MapGet("/sign/batch", async (HttpRequest request, ILogger logger, string id) =>
+app.MapGet("/sign/batch", async (HttpRequest request, Settings settings, ILogger logger, string id) =>
 {
     var headers = request.Headers.ToDictionary();
-    if (IsDetachedRequest(headers))
-    {
-        return await DetachedBatchedSigning.Get(headers, id, logger);
-    }
-    return await BatchedSigning.Get(headers, id, logger);
+    ISigner signer = GetSigner(request, settings, logger, headers);
+
+    return await BatchedSigning.Get(headers, id, signer);
 });
 
+static ISigner GetSigner(HttpRequest request, Settings settings, ILogger logger, Dictionary<string, Microsoft.Extensions.Primitives.StringValues> headers)
+{
+    ISigner signer = new Signer(settings, logger);
+    if (IsDetachedRequest(headers))
+    {
+        signer = new SignerDetached(settings, logger);
+    }
+    return signer;
+}
 
 app.MapHealthChecks("/healthz");
 app.Run();
@@ -149,7 +152,7 @@ static void Cleanup(FileInfo workingFilePath, ILogger logger)
     {
         workingFilePath.Delete();
     }
-    catch(Exception ex)
+    catch (Exception ex)
     {
         logger.LogError(ex, $"failed to cleanup file {workingFilePath}");
     }

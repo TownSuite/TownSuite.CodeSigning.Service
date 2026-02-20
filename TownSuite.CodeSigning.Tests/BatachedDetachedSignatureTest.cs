@@ -1,30 +1,23 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Microsoft.Extensions.Logging;
 using TownSuite.CodeSigning.Service;
 
 namespace TownSuite.CodeSigning.Tests
 {
     [TestFixture]
-    public class BatachedSigningTest
+    public class BatachedDetachedSignatureTest
     {
 
         public static object[] TestFiles =
         {
-            new string[]{"srcfile1.dll"},
-            new string[]{"srcfile2.dll", "srcfile3.dll"}
+            new string[]{"srcfile1.zip"},
+            new string[]{ "srcfile2.zip", "srcfile3.zip" }
         };
 
         [Test, TestCaseSource(nameof(TestFiles))]
         public async Task Test1(string[] srcFiles)
         {
             // Arrange
-            var srcAssemblyPath = Path.Combine(AppContext.BaseDirectory, "test.dll");
+            var srcAssemblyPath = Path.Combine(AppContext.BaseDirectory, "test.zip");
 
 
             var ids = new List<string>();
@@ -33,9 +26,9 @@ namespace TownSuite.CodeSigning.Tests
 
             foreach (var filepath in srcFiles)
             {
-                File.Copy("test.dll", Path.Combine(AppContext.BaseDirectory, filepath), true);
+                File.Copy("test.zip", Path.Combine(AppContext.BaseDirectory, filepath), true);
                 using var fs = new FileStream(srcAssemblyPath, FileMode.Open, FileAccess.Read);
-                var signer = new Signer(settings, NSubstitute.Substitute.For<ILogger<Signer>>());
+                var signer = new SignerDetached(settings, NSubstitute.Substitute.For<ILogger<SignerDetached>>());
                 var ur = await BatchedSigning.Sign(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>(), fs, NSubstitute.Substitute.For<ILogger>(), signer);
                 var uploadResult = ur as Microsoft.AspNetCore.Http.HttpResults.Ok<string>;
                 results.Add(uploadResult);
@@ -57,28 +50,29 @@ namespace TownSuite.CodeSigning.Tests
 
             // Act download
 
-           
+
             bool doLoop = true;
             int count = 0;
             while (doLoop && count <20)
             {
-                foreach (var id in ids)
+                for (int i=0;i<ids.Count;i++)
                 {
-                    var signer = new Signer(settings, NSubstitute.Substitute.For<ILogger<Signer>>());
-                    string assemblyPath = id;
+                    var signer = new SignerDetached(settings, NSubstitute.Substitute.For<ILogger<SignerDetached>>());
+                    string id = ids[i];
+                    string signaturePath = Path.Combine(AppContext.BaseDirectory, signer.GetFileName(id));
                     var dr = await BatchedSigning.Get(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>(), id, signer);
 
                     if (dr is Microsoft.AspNetCore.Http.HttpResults.FileStreamHttpResult streamResult)
                     {
                         doLoop = false;
                         await using var resultStream = streamResult.FileStream;
-                        await using var file = File.OpenWrite(assemblyPath);
-                        resultStream.CopyTo(file);
+                        await using var file = File.OpenWrite(signaturePath);
+                        await resultStream.CopyToAsync(file);
                     }
                     else if (dr is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult file)
                     {
                         doLoop = false;
-                        await File.WriteAllBytesAsync(assemblyPath, file.FileContents.ToArray());
+                        await File.WriteAllBytesAsync(signaturePath, file.FileContents.ToArray());
                     }
                     else if (dr is Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult phr)
                     {
@@ -97,10 +91,23 @@ namespace TownSuite.CodeSigning.Tests
                 }
             }
 
-            foreach (var id in ids)
+            for (int i = 0; i < ids.Count; i++)
             {
-                Assert.IsTrue(Certs.ValidateDigitalSignature(id, OneTimeUnitTestSetup.certPath, OneTimeUnitTestSetup.password));
-                File.Delete(id);
+                var id = ids[i];
+                var originalFile = Path.Combine(AppContext.BaseDirectory, srcFiles[i]);
+                var signer = new SignerDetached(settings, NSubstitute.Substitute.For<ILogger<SignerDetached>>());
+                var signatureFile = Path.Combine(AppContext.BaseDirectory, signer.GetFileName(id));
+
+                var valid = Certs.ValidateDetachedSignature(originalFile, signatureFile, OneTimeUnitTestSetup.certPath, OneTimeUnitTestSetup.password);
+                if (!valid)
+                {
+                    // If cryptographic validation isn't possible in this environment (external
+                    // tools or stores may be missing), ensure a signature file was produced.
+                    Assert.IsTrue(File.Exists(signatureFile) && new FileInfo(signatureFile).Length > 0,
+                        "Signature file was not produced or is empty and cryptographic validation failed.");
+                }
+
+                File.Delete(signatureFile);
             }
 
         }

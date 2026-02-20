@@ -36,6 +36,9 @@
     <None Update="test.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="test.zip">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="testcert.pfx">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

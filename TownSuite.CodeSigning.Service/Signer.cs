@@ -5,11 +5,11 @@ using System.Threading;
 
 namespace TownSuite.CodeSigning.Service
 {
-    public class Signer : IDisposable
+    public class Signer : ISigner
     {
         readonly Settings _settings;
         StringBuilder msg = new StringBuilder();
-        Process p;
+
         readonly ILogger _logger;
         public Signer(Settings settings, ILogger logger)
         {
@@ -17,22 +17,11 @@ namespace TownSuite.CodeSigning.Service
             _logger = logger;
         }
 
-        public void Dispose()
-        {
-            if (p == null)
-            {
-                return;
-            }
-            p.OutputDataReceived -= process_OutputDataReceived;
-            p.ErrorDataReceived -= process_ErrorDataReceived;
-            p.Dispose();
-        }
-
         public async Task<(bool IsSigned, string Message)> SignAsync(string workingDir, string[] files)
         {
             var _cancellationToken = new CancellationTokenSource(_settings.SigntoolTimeoutInMs * files.Length).Token;
 
-            p = new System.Diagnostics.Process();
+            using var p = new System.Diagnostics.Process();
             p.StartInfo.FileName = _settings.SignToolPath;
 
             if (files.Length == 1)
@@ -83,7 +72,13 @@ namespace TownSuite.CodeSigning.Service
             }
 
             _logger.LogInformation($"SignToolInternal ExitCode: {p.ExitCode}, Message: {msg.ToString()}");
+
             return (p.ExitCode == 0, msg.ToString());
+        }
+
+        public string GetFileName(string id)
+        {
+            return $"{id}.workingfile";
         }
 
         private void process_ErrorDataReceived(object sender, DataReceivedEventArgs e)
