@@ -134,7 +134,7 @@ static ISigner GetSigner(HttpRequest request, Settings settings, ILogger logger,
     return signer;
 }
 
-app.MapHealthChecks("/healthz");
+app.MapHealthChecks("/healthz").AllowAnonymous();
 app.Run();
 
 static bool IsDetachedRequest(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> headers)
