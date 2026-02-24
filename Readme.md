@@ -33,6 +33,8 @@ curl --location 'https://localhost:7153/sign' \
 
 # TownSuite.CodeSigning.Client examples
 
+See ./TownSuite.CodeSigning.Client.exe -help for more information
+
 ## Single folder
 
 Sign all matching files in one folder using `-folder` and `-file`.

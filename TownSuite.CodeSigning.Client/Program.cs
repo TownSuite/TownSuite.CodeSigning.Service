@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -13,6 +14,7 @@ string baseurl = string.Empty;
 string token = string.Empty;
 bool quickFail = false;
 bool ignoreFailures = false;
+bool ignoreCerts = false;
 bool detached = false;
 int timeoutInMs = 10000;
 int batchTimeoutInSeconds = 1200;
@@ -86,6 +88,11 @@ for (int i = 0; i < args.Length; i++)
     {
         detached = true;
     }
+    else if (string.Equals(args[i], "-ignorecerts", StringComparison.InvariantCultureIgnoreCase))
+    {
+        // Accept any HTTPS server certificate (insecure)
+        ignoreCerts = true;
+    }
     else if (string.Equals(args[i], "-timeout", StringComparison.InvariantCultureIgnoreCase))
     {
         if (!int.TryParse(args[i + 1], out timeoutInMs))
@@ -139,10 +146,24 @@ if (string.IsNullOrWhiteSpace(token))
 }
 
 
-var client = new HttpClient
+HttpClient client;
+if (ignoreCerts)
 {
-    Timeout = TimeSpan.FromMilliseconds(timeoutInMs)
-};
+    var handler = new HttpClientHandler();
+    // Accept any server certificate (insecure - use only for testing)
+    handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+    client = new HttpClient(handler)
+    {
+        Timeout = TimeSpan.FromMilliseconds(timeoutInMs)
+    };
+}
+else
+{
+    client = new HttpClient
+    {
+        Timeout = TimeSpan.FromMilliseconds(timeoutInMs)
+    };
+}
 
 //client.BaseAddress = new Uri(url);
 if (!string.IsNullOrWhiteSpace(token))
@@ -199,6 +220,8 @@ void PrintHelp()
     Console.WriteLine("-ignorefailures if this is set the program will ignore all errors and override quickfail.");
     Console.WriteLine("-detached");
     Console.WriteLine("    If set, use detached signatures.");
+    Console.WriteLine("-ignorecerts");
+    Console.WriteLine("    If set, accept any HTTPS server certificate (insecure - for testing only)");
     Console.WriteLine("-timeout \"10000\"");
     Console.WriteLine("    Timeout is in ms.  Defaults to 10000.   This is per http request.");
     Console.WriteLine("");
