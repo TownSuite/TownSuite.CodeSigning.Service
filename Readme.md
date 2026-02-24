@@ -232,5 +232,5 @@ openssl pkcs12 -in "server.pfx" -nokeys -out "server.cer"
 
 ```bash
 openssl cms -verify -binary -inform DER -in archive.zip.sig -content archive.zip -CAfile server.cer > /dev/null
-
+```
 
