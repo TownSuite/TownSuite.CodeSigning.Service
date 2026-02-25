@@ -80,6 +80,35 @@ namespace TownSuite.CodeSigning.ClientTests
             var result = FileHelpers.CreateFileList(new[] { _unsignedDllCopy }, "", isDetached: false);
             Assert.That(result, Is.EquivalentTo(new[] { _unsignedDllCopy }));
         }
+
+        [Test]
+        public void ReturnsFile_WhenFileIsDetachedZip()
+        {
+            // test_detached.zip is included in the test project output
+            var testDir = TestContext.CurrentContext.TestDirectory;
+            var detachedSrc = Path.Combine(testDir, "test_detached.zip");
+
+            // Copy into temp dir to isolate
+            var detachedCopy = Path.Combine(_tempDir, "test_detached.zip");
+            File.Copy(detachedSrc, detachedCopy, true);
+
+            var result = FileHelpers.CreateFileList(new[] { "test_detached.zip" }, _tempDir, isDetached: true);
+            Assert.That(result, Has.Count.EqualTo(1));
+            Assert.That(result[0], Is.EqualTo(detachedCopy));
+        }
+
+        [Test]
+        public void SkipsZip_WhenNotDetached()
+        {
+            var testDir = TestContext.CurrentContext.TestDirectory;
+            var detachedSrc = Path.Combine(testDir, "test_detached.zip");
+            var detachedCopy = Path.Combine(_tempDir, "test_detached.zip");
+            File.Copy(detachedSrc, detachedCopy, true);
+
+            var result = FileHelpers.CreateFileList(new[] { "test_detached.zip" }, _tempDir, isDetached: false);
+            // When not detached, .zip is not a valid target and should be skipped
+            Assert.IsEmpty(result);
+        }
     }
 
     [TestFixture]

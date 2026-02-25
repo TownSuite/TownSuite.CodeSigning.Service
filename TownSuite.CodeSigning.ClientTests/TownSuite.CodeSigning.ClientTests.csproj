@@ -32,6 +32,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="test_detached.zip">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="test_unsigned.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
