@@ -47,14 +47,14 @@ namespace TownSuite.CodeSigning.ClientTests
         [Test]
         public void ReturnsEmptyList_WhenNoFilesMatch()
         {
-            var result = FileHelpers.CreateFileList(new[] { "doesnotexist.dll" }, _tempDir);
+            var result = FileHelpers.CreateFileList(new[] { "doesnotexist.dll" }, _tempDir, isDetached: false);
             Assert.IsEmpty(result);
         }
 
         [Test]
         public void ReturnsFile_WhenFileIsUnsignedDll()
         {
-            var result = FileHelpers.CreateFileList(new[] { "test_unsigned.dll" }, _tempDir);
+            var result = FileHelpers.CreateFileList(new[] { "test_unsigned.dll" }, _tempDir, isDetached: false);
             Assert.That(result, Has.Count.EqualTo(1));
             Assert.That(result[0], Is.EqualTo(_unsignedDllCopy));
         }
@@ -62,14 +62,14 @@ namespace TownSuite.CodeSigning.ClientTests
         [Test]
         public void SkipsFile_WhenFileIsAlreadySignedDll()
         {
-            var result = FileHelpers.CreateFileList(new[] { "test_already_signed.dll" }, _tempDir);
+            var result = FileHelpers.CreateFileList(new[] { "test_already_signed.dll" }, _tempDir, isDetached: false);
             Assert.IsEmpty(result);
         }
 
         [Test]
         public void HandlesWildcards_FindsOnlyUnsignedDll()
         {
-            var result = FileHelpers.CreateFileList(new[] { "test_*.dll" }, _tempDir);
+            var result = FileHelpers.CreateFileList(new[] { "test_*.dll" }, _tempDir, isDetached: false);
             // Only unsigned should be returned, as signed is skipped
             Assert.That(result, Is.EquivalentTo(new[] { _unsignedDllCopy }));
         }
@@ -77,7 +77,7 @@ namespace TownSuite.CodeSigning.ClientTests
         [Test]
         public void HandlesFullPath_FindsUnsignedDll()
         {
-            var result = FileHelpers.CreateFileList(new[] { _unsignedDllCopy }, "");
+            var result = FileHelpers.CreateFileList(new[] { _unsignedDllCopy }, "", isDetached: false);
             Assert.That(result, Is.EquivalentTo(new[] { _unsignedDllCopy }));
         }
     }
@@ -125,7 +125,7 @@ namespace TownSuite.CodeSigning.ClientTests
         {
             var result = FileHelpers.CreateFileListFromMultipleFolders(
                 new[] { "test_unsigned.dll" },
-                new[] { _tempDir1, _tempDir2, _tempDir3 });
+                new[] { _tempDir1, _tempDir2, _tempDir3 }, isDetached: false);
 
             Assert.That(result, Has.Count.EqualTo(3));
         }
@@ -135,7 +135,7 @@ namespace TownSuite.CodeSigning.ClientTests
         {
             var result = FileHelpers.CreateFileListFromMultipleFolders(
                 new[] { "test_unsigned.dll" },
-                new[] { _tempDir1, "  ", _tempDir2 });
+                new[] { _tempDir1, "  ", _tempDir2 }, isDetached: false);
 
             Assert.That(result, Has.Count.EqualTo(2));
         }
@@ -152,7 +152,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_tempDir3, new[] { "test_unsigned.dll" })
             };
 
-            var result = FileHelpers.CreateFileListFromFolderFilePairs(pairs);
+            var result = FileHelpers.CreateFileListFromFolderFilePairs(pairs, isDetached: false);
 
             // Only folder1 and folder3 should produce results
             Assert.That(result, Has.Count.EqualTo(2));
@@ -172,7 +172,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_tempDir2, new[] { "special.dll" })
             };
 
-            var result = FileHelpers.CreateFileListFromFolderFilePairs(pairs);
+            var result = FileHelpers.CreateFileListFromFolderFilePairs(pairs, isDetached: false);
 
             Assert.That(result, Has.Count.EqualTo(2));
             Assert.That(result, Does.Contain(Path.Combine(_tempDir1, "test_unsigned.dll")));
@@ -189,7 +189,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_tempDir2, new[] { "test_unsigned.dll" })
             };
 
-            var result = FileHelpers.CreateFileListFromFolderFilePairs(pairs);
+            var result = FileHelpers.CreateFileListFromFolderFilePairs(pairs, isDetached: false);
 
             Assert.That(result, Has.Count.EqualTo(2));
         }
@@ -203,7 +203,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_tempDir2, new[] { "nonexistent_pattern_*.exe" })
             };
 
-            var result = FileHelpers.CreateFileListFromFolderFilePairs(pairs);
+            var result = FileHelpers.CreateFileListFromFolderFilePairs(pairs, isDetached: false);
 
             // Only folder1 should match with its wildcard
             Assert.That(result, Has.Count.EqualTo(1));
@@ -385,7 +385,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_rootDir, new[] { "test_unsigned.dll" })
             };
 
-            var result = FileHelpers.CreateFileListRecursive(pairs);
+            var result = FileHelpers.CreateFileListRecursive(pairs, isDetached: false);
 
             Assert.That(result, Has.Count.EqualTo(3));
         }
@@ -406,7 +406,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_rootDir, new[] { "*.dll" })
             };
 
-            var result = FileHelpers.CreateFileListRecursive(pairs);
+            var result = FileHelpers.CreateFileListRecursive(pairs, isDetached: false);
 
             Assert.That(result, Has.Count.EqualTo(2));
         }
@@ -425,7 +425,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_rootDir, new[] { "test_unsigned.dll" })
             };
 
-            var result = FileHelpers.CreateFileListRecursive(pairs);
+            var result = FileHelpers.CreateFileListRecursive(pairs, isDetached: false);
 
             Assert.That(result, Has.Count.EqualTo(1));
             Assert.That(result[0], Does.EndWith("test_unsigned.dll"));
@@ -447,7 +447,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_rootDir, new[] { "*.dll", "*.exe" })
             };
 
-            var result = FileHelpers.CreateFileListRecursive(pairs);
+            var result = FileHelpers.CreateFileListRecursive(pairs, isDetached: false);
 
             Assert.That(result, Has.Count.EqualTo(2));
         }
@@ -460,7 +460,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (Path.Combine(_rootDir, "does_not_exist"), new[] { "*.dll" })
             };
 
-            var result = FileHelpers.CreateFileListRecursive(pairs);
+            var result = FileHelpers.CreateFileListRecursive(pairs, isDetached: false);
 
             Assert.That(result, Is.Empty);
         }
@@ -481,7 +481,7 @@ namespace TownSuite.CodeSigning.ClientTests
                 (_rootDir, new[] { "*.dll" })
             };
 
-            var files = FileHelpers.CreateFileListRecursive(pairs);
+            var files = FileHelpers.CreateFileListRecursive(pairs, isDetached: false);
             var (unique, dupeMap) = FileHelpers.DeduplicateFiles(files);
 
             Assert.That(unique, Has.Count.EqualTo(1));
@@ -509,7 +509,7 @@ namespace TownSuite.CodeSigning.ClientTests
                     (root2, new[] { "*.exe" })
                 };
 
-                var result = FileHelpers.CreateFileListRecursive(pairs);
+                var result = FileHelpers.CreateFileListRecursive(pairs, isDetached: false);
 
                 Assert.That(result, Has.Count.EqualTo(2));
                 Assert.That(result.Any(f => f.EndsWith(".dll")), Is.True);

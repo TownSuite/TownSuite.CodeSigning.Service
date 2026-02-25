@@ -3,7 +3,7 @@ using System.Security.Cryptography.X509Certificates;
 
 public static class FileHelpers
 {
-    static bool IsValidFile(string file)
+    static bool IsValidFile(string file, bool isDetached)
     {
         if (string.IsNullOrWhiteSpace(file))
         {
@@ -13,11 +13,15 @@ public static class FileHelpers
         {
             return false;
         }
-        var ext = Path.GetExtension(file);
-        if (ext != ".exe" && ext != ".dll" && ext != ".msi" && ext != ".msix" 
-            && ext != ".cab" && ext != ".sys" && ext != ".ocx" && ext != ".appx")
+
+        if (!isDetached)
         {
-            return false;
+            var ext = Path.GetExtension(file);
+            if (ext != ".exe" && ext != ".dll" && ext != ".msi" && ext != ".msix"
+                && ext != ".cab" && ext != ".sys" && ext != ".ocx" && ext != ".appx")
+            {
+                return false;
+            }
         }
         return true;
     }
@@ -42,7 +46,7 @@ public static class FileHelpers
         return false;
     }
 
-    public static List<string> CreateFileList(string[] filepaths, string folder)
+    public static List<string> CreateFileList(string[] filepaths, string folder, bool isDetached)
     {
         var files = new List<string>();
         if (!string.IsNullOrWhiteSpace(folder))
@@ -91,7 +95,7 @@ public static class FileHelpers
         var finalFiles = new List<string>();
         foreach (var file in files)
         {
-            if (IsValidFile(file) && !FileAlreadyHasDigitalSignature(file))
+            if (IsValidFile(file, isDetached) && !FileAlreadyHasDigitalSignature(file))
             {
                 finalFiles.Add(file);
             }
@@ -103,7 +107,7 @@ public static class FileHelpers
     /// <summary>
     /// Builds a combined file list from multiple folder paths, each using the same file patterns.
     /// </summary>
-    public static List<string> CreateFileListFromMultipleFolders(string[] filepaths, string[] folders)
+    public static List<string> CreateFileListFromMultipleFolders(string[] filepaths, string[] folders, bool isDetached)
     {
         var pairs = new List<(string Folder, string[] Files)>();
         foreach (string folder in folders)
@@ -115,13 +119,13 @@ public static class FileHelpers
             }
         }
 
-        return CreateFileListFromFolderFilePairs(pairs);
+        return CreateFileListFromFolderFilePairs(pairs, isDetached);
     }
 
     /// <summary>
     /// Builds a combined file list from folder/file pairs where each folder has its own file patterns.
     /// </summary>
-    public static List<string> CreateFileListFromFolderFilePairs(List<(string Folder, string[] Files)> folderFilePairs)
+    public static List<string> CreateFileListFromFolderFilePairs(List<(string Folder, string[] Files)> folderFilePairs, bool isDetached)
     {
         ArgumentNullException.ThrowIfNull(folderFilePairs);
 
@@ -134,7 +138,7 @@ public static class FileHelpers
                 continue;
             }
 
-            allFiles.AddRange(CreateFileList(files, trimmed));
+            allFiles.AddRange(CreateFileList(files, trimmed, isDetached));
         }
 
         return allFiles;
@@ -144,7 +148,7 @@ public static class FileHelpers
     /// Recursively scans parent folders for files matching the given patterns.
     /// Each entry is a parent folder paired with its own file patterns.
     /// </summary>
-    public static List<string> CreateFileListRecursive(List<(string Folder, string[] Files)> folderFilePairs)
+    public static List<string> CreateFileListRecursive(List<(string Folder, string[] Files)> folderFilePairs, bool isDetached)
     {
         ArgumentNullException.ThrowIfNull(folderFilePairs);
 
@@ -182,7 +186,7 @@ public static class FileHelpers
         var finalFiles = new List<string>();
         foreach (var file in allFiles)
         {
-            if (IsValidFile(file) && !FileAlreadyHasDigitalSignature(file))
+            if (IsValidFile(file, isDetached) && !FileAlreadyHasDigitalSignature(file))
             {
                 finalFiles.Add(file);
             }

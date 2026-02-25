@@ -247,18 +247,18 @@ async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, b
 
     if (folderFilePairs.Count > 0)
     {
-        files.AddRange(FileHelpers.CreateFileListFromFolderFilePairs(folderFilePairs));
+        files.AddRange(FileHelpers.CreateFileListFromFolderFilePairs(folderFilePairs, detached));
     }
 
     if (recursiveFolderFilePairs.Count > 0)
     {
-        files.AddRange(FileHelpers.CreateFileListRecursive(recursiveFolderFilePairs));
+        files.AddRange(FileHelpers.CreateFileListRecursive(recursiveFolderFilePairs, detached));
     }
 
     // Also include any standalone -file/-folder files
     if (filepaths != null && filepaths.Length > 0)
     {
-        files.AddRange(FileHelpers.CreateFileList(filepaths, folder));
+        files.AddRange(FileHelpers.CreateFileList(filepaths, folder, detached));
     }
 
     if (files.Count == 0)
