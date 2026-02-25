@@ -14,7 +14,8 @@ public static class FileHelpers
             return false;
         }
         var ext = Path.GetExtension(file);
-        if (ext != ".exe" && ext != ".dll" && ext != ".msi" && ext != "msix")
+        if (ext != ".exe" && ext != ".dll" && ext != ".msi" && ext != ".msix" 
+            && ext != ".cab" && ext != ".sys" && ext != ".ocx" && ext != ".appx")
         {
             return false;
         }
