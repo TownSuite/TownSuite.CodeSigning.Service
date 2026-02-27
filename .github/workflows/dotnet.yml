@@ -24,14 +24,8 @@ jobs:
         with:
           name: linux-x64
           path: |
-             build/linux-x64/*.zip
-          retention-days: 1
-      - name: Archive Self Contained Debian Linux Client
-        uses: actions/upload-artifact@v6
-        with:
-          name: linux-x64-client-deb
-          path: |
-            **/**/*.deb
+             build/*.zip
+              **/**/*.deb
           retention-days: 1
 
   windows-build:
