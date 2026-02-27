@@ -50,7 +50,7 @@ pipeline {
                         // zip and hashes
                         pwsh '''
                         # zip the win-x64 folder
-                        $version = ([regex]::Match((Get-Content -Path .\Directory.Build.props -Raw), '<Version>([0-9.]+)</Version>').Groups[1].Value)
+                        $version = ([regex]::Match((Get-Content -Path .\\Directory.Build.props -Raw), '<Version>([0-9.]+)</Version>').Groups[1].Value)
                         cd build
                         Compress-Archive -Path "win-x64\\TownSuite.CodeSigning.Client\\*" -DestinationPath "TownSuite.CodeSigning.Client-$version-win-x64.zip"
                         Compress-Archive -Path "win-x64\\TownSuite.CodeSigning.Service\\*" -DestinationPath "TownSuite.CodeSigning.Service-$version-win-x64.zip"
