@@ -35,10 +35,8 @@ fpm -s dir -t deb \
 # zip the linux-x64 folder
 cd $CURRENTPATH/build
 zip -r TownSuite.CodeSigning.Client-$VERSION-linux-x64.zip linux-x64/TownSuite.CodeSigning.Client
-zip -r TownSuite.CodeSigning.Client-$VERSION-linux-x64-deb.zip ./linux/*.deb
 
 # create *.SHA256SUMS per file
 sha256sum TownSuite.CodeSigning.Client-$VERSION-linux-x64.zip > TownSuite.CodeSigning.Client-$VERSION-linux-x64.zip.SHA256SUMS
-sha256sum TownSuite.CodeSigning.Client-$VERSION-linux-x64-deb.zip > TownSuite.CodeSigning.Client-$VERSION-linux-x64-deb.zip.SHA256SUMS
 
 cd $CURRENTPATH
