@@ -147,38 +147,97 @@ public static class FileHelpers
     /// <summary>
     /// Recursively scans parent folders for files matching the given patterns.
     /// Each entry is a parent folder paired with its own file patterns.
+    /// Added optional exclusion of folder names.
     /// </summary>
-    public static List<string> CreateFileListRecursive(List<(string Folder, string[] Files)> folderFilePairs, bool isDetached)
+    public static List<string> CreateFileListRecursive(List<(string Folder, string[] Files)> folderFilePairs, bool isDetached, string[]? excludeFolderNames = null)
     {
         ArgumentNullException.ThrowIfNull(folderFilePairs);
+        var excludeSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (excludeFolderNames != null)
+        {
+            foreach (var ex in excludeFolderNames)
+            {
+                var t = ex?.Trim();
+                if (!string.IsNullOrWhiteSpace(t))
+                {
+                    excludeSet.Add(t);
+                }
+            }
+        }
 
         var allFiles = new List<string>();
+
         foreach (var (parentFolder, filePatterns) in folderFilePairs)
         {
-            string trimmed = parentFolder.Trim();
-            if (string.IsNullOrWhiteSpace(trimmed) || !Directory.Exists(trimmed))
+            string root = parentFolder.Trim();
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
             {
                 continue;
             }
 
-            foreach (string pattern in filePatterns)
+            // BFS/stack walk so we can skip directories that match excludeSet
+            var dirsToVisit = new Stack<string>();
+            dirsToVisit.Push(root);
+
+            while (dirsToVisit.Count > 0)
             {
-                string trimmedPattern = pattern.Trim();
-                if (string.IsNullOrWhiteSpace(trimmedPattern))
+                string currentDir = dirsToVisit.Pop();
+
+                // Skip directory if any folder name segment matches excludes
+                string folderName = Path.GetFileName(currentDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                if (!string.IsNullOrEmpty(folderName) && excludeSet.Contains(folderName))
                 {
                     continue;
                 }
 
-                if (trimmedPattern.Contains('*') || trimmedPattern.Contains('?'))
+                foreach (string pattern in filePatterns)
                 {
-                    string[] matchingFiles = Directory.GetFiles(trimmed, trimmedPattern, SearchOption.AllDirectories);
-                    allFiles.AddRange(matchingFiles);
+                    string trimmedPattern = pattern.Trim();
+                    if (string.IsNullOrWhiteSpace(trimmedPattern))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Use GetFiles on the current directory only
+                        string[] matchingFiles = Directory.GetFiles(currentDir, trimmedPattern);
+                        if (matchingFiles.Length > 0)
+                        {
+                            allFiles.AddRange(matchingFiles);
+                        }
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        // ignore inaccessible directories
+                    }
+                    catch (DirectoryNotFoundException)
+                    {
+                        // directory removed during scan
+                    }
                 }
-                else
+
+                // enqueue subdirectories
+                try
                 {
-                    // Exact filename — search all subdirectories
-                    string[] matchingFiles = Directory.GetFiles(trimmed, trimmedPattern, SearchOption.AllDirectories);
-                    allFiles.AddRange(matchingFiles);
+                    foreach (var sub in Directory.GetDirectories(currentDir))
+                    {
+                        // If the subfolder's name is explicitly excluded, skip pushing it
+                        string subName = Path.GetFileName(sub.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                        if (!string.IsNullOrEmpty(subName) && excludeSet.Contains(subName))
+                        {
+                            continue;
+                        }
+                        dirsToVisit.Push(sub);
+                    }
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // ignore
+                }
+                catch (DirectoryNotFoundException)
+                {
+                    // ignore
                 }
             }
         }

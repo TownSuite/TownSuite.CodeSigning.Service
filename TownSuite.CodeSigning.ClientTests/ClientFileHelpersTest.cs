@@ -33,6 +33,8 @@ namespace TownSuite.CodeSigning.ClientTests
             File.Copy(_unsignedDllSrc, _unsignedDllCopy, true);
         }
 
+
+
         [TearDown]
         public void TearDown()
         {
@@ -548,6 +550,61 @@ namespace TownSuite.CodeSigning.ClientTests
             {
                 try { if (Directory.Exists(root2)) Directory.Delete(root2, true); } catch { }
             }
+        }
+
+        [Test]
+        public void CreateFileListRecursive_SkipsExcludedFolderNames()
+        {
+            string sub1 = Path.Combine(_rootDir, "win-x64");
+            string sub2 = Path.Combine(_rootDir, "obj");
+            string sub3 = Path.Combine(_rootDir, "linux-x64");
+            string sub4 = Path.Combine(sub3, "node_modules");
+            Directory.CreateDirectory(sub1);
+            Directory.CreateDirectory(sub2);
+            Directory.CreateDirectory(sub3);
+            Directory.CreateDirectory(sub4);
+
+            File.Copy(_unsignedDllSrc, Path.Combine(sub1, "test_unsigned.dll"), true);
+            File.Copy(_unsignedDllSrc, Path.Combine(sub2, "test_unsigned.dll"), true);
+            File.Copy(_unsignedDllSrc, Path.Combine(sub3, "test_unsigned.dll"), true);
+            File.Copy(_unsignedDllSrc, Path.Combine(sub4, "test_unsigned.dll"), true);
+
+            var pairs = new List<(string Folder, string[] Files)>
+            {
+                (_rootDir, new[] { "*.dll" })
+            };
+
+            // Exclude common build/module folders
+            var result = FileHelpers.CreateFileListRecursive(pairs, isDetached: false, excludeFolderNames: new[] { "obj", "node_modules" });
+
+            // obj and node_modules files should be skipped
+            Assert.That(result, Has.Count.EqualTo(2));
+            Assert.That(result.Any(f => f.Contains("obj")), Is.False);
+            Assert.That(result.Any(f => f.Contains("node_modules")), Is.False);
+        }
+
+        [Test]
+        public void CreateFileListRecursive_ExcludeFolderNames_AreTrimmedAndCaseInsensitive()
+        {
+            string sub1 = Path.Combine(_rootDir, "App");
+            string sub2 = Path.Combine(_rootDir, "Bin");
+            Directory.CreateDirectory(sub1);
+            Directory.CreateDirectory(sub2);
+
+            File.Copy(_unsignedDllSrc, Path.Combine(sub1, "test_unsigned.dll"), true);
+            File.Copy(_unsignedDllSrc, Path.Combine(sub2, "test_unsigned.dll"), true);
+
+            var pairs = new List<(string Folder, string[] Files)>
+            {
+                (_rootDir, new[] { "*.dll" })
+            };
+
+            // Provide exclusion with extra whitespace and different casing
+            var result = FileHelpers.CreateFileListRecursive(pairs, isDetached: false, excludeFolderNames: new[] { "  bin  " });
+
+            // Bin should be excluded regardless of casing/whitespace
+            Assert.That(result, Has.Count.EqualTo(1));
+            Assert.That(result[0], Does.Contain("App"));
         }
     }
 }

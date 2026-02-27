@@ -18,6 +18,7 @@ bool ignoreCerts = false;
 bool detached = false;
 int timeoutInMs = 10000;
 int batchTimeoutInSeconds = 1200;
+string[] excludeFolders = Array.Empty<string>();
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -106,6 +107,10 @@ for (int i = 0; i < args.Length; i++)
         {
             Console.WriteLine($"-batchtimeout value failed to parse.  defaulting to {batchTimeoutInSeconds}");
         }
+    }
+    else if (string.Equals(args[i], "-excludefolders", StringComparison.InvariantCultureIgnoreCase))
+    {
+        excludeFolders = args[i + 1].Split(";", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
     }
     else if (string.Equals(args[i], "-help", StringComparison.InvariantCultureIgnoreCase)
              || string.Equals(args[i], "--help", StringComparison.InvariantCultureIgnoreCase)
@@ -214,6 +219,8 @@ void PrintHelp()
     Console.WriteLine("    A parent folder path and file patterns separated by |. Files within are ; separated.");
     Console.WriteLine("    Recursively scans all subdirectories for matching files.");
     Console.WriteLine("    Can be specified multiple times. Duplicates are detected and signed once.");
+    Console.WriteLine("-excludefolders \"name1;name2;name3\"");
+    Console.WriteLine("    Semicolon separated folder names to exclude from recursive searches (e.g. obj;bin;node_modules).");
     Console.WriteLine("-url \"url to signing server\"");
     Console.WriteLine("-token \"the auth token\" or -tokenfile \"path to plain text file holding token\"");
     Console.WriteLine("-quickfail if this is set the program will exit on the first faliure.");
@@ -241,7 +248,7 @@ void PrintHelp()
 
 async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, bool ignoreFailures,
     string folder, List<(string Folder, string[] Files)> folderFilePairs,
-    List<(string Folder, string[] Files)> recursiveFolderFilePairs, bool detached = false)
+    List<(string Folder, string[] Files)> recursiveFolderFilePairs, bool detached = false, string[]? excludeFolderNames = null)
 {
     var files = new List<string>();
 
@@ -252,7 +259,7 @@ async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, b
 
     if (recursiveFolderFilePairs.Count > 0)
     {
-        files.AddRange(FileHelpers.CreateFileListRecursive(recursiveFolderFilePairs, detached));
+        files.AddRange(FileHelpers.CreateFileListRecursive(recursiveFolderFilePairs, detached, excludeFolderNames));
     }
 
     // Also include any standalone -file/-folder files
