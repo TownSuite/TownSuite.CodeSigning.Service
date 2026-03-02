@@ -275,19 +275,53 @@ public static class FileHelpers
     {
         ArgumentNullException.ThrowIfNull(files);
 
+        // Normalize input paths to full paths and avoid hashing the same physical
+        // file more than once (same full path). Use a case-insensitive comparer on
+        // Windows and ordinal on other platforms.
+        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var seenPaths = new HashSet<string>(pathComparer);
+
         // hash -> list of file paths with that hash
         var hashGroups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
         foreach (string file in files)
         {
-            string hash = ComputeFileHash(file);
+            if (string.IsNullOrWhiteSpace(file))
+            {
+                continue;
+            }
+
+            string fullPath;
+            try
+            {
+                fullPath = Path.GetFullPath(file);
+            }
+            catch
+            {
+                // Skip invalid paths
+                continue;
+            }
+
+            // If we've already seen this exact physical path, skip it to avoid
+            // creating duplicate entries that point to the same file.
+            if (!seenPaths.Add(fullPath))
+            {
+                continue;
+            }
+
+            if (!File.Exists(fullPath))
+            {
+                continue;
+            }
+
+            string hash = ComputeFileHash(fullPath);
             if (!hashGroups.TryGetValue(hash, out var group))
             {
                 group = new List<string>();
                 hashGroups[hash] = group;
             }
 
-            group.Add(file);
+            group.Add(fullPath);
         }
 
         var uniqueFiles = new List<string>();
@@ -317,10 +351,62 @@ public static class FileHelpers
 
         foreach (var (canonical, duplicates) in duplicateMap)
         {
+            if (string.IsNullOrWhiteSpace(canonical) || duplicates == null)
+            {
+                continue;
+            }
+
+            string canonicalFull;
+            try
+            {
+                canonicalFull = Path.GetFullPath(canonical);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Skipping canonical path '{canonical}' - invalid path: {ex.Message}");
+                continue;
+            }
+
+            if (!File.Exists(canonicalFull))
+            {
+                Console.WriteLine($"Signed canonical file not found, skipping copies: {canonicalFull}");
+                continue;
+            }
+
             foreach (string duplicate in duplicates)
             {
-                File.Copy(canonical, duplicate, overwrite: true);
-                Console.WriteLine($"Copied signed file to duplicate location: {duplicate}");
+                if (string.IsNullOrWhiteSpace(duplicate))
+                {
+                    continue;
+                }
+
+                string duplicateFull;
+                try
+                {
+                    duplicateFull = Path.GetFullPath(duplicate);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Skipping duplicate path '{duplicate}' - invalid path: {ex.Message}");
+                    continue;
+                }
+
+                // Skip copying if paths refer to the same file (case-insensitive on Windows)
+                if (string.Equals(canonicalFull, duplicateFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"Skipping copy: canonical and duplicate are the same path: {canonicalFull}");
+                    continue;
+                }
+
+                try
+                {
+                    File.Copy(canonicalFull, duplicateFull, overwrite: true);
+                    Console.WriteLine($"Copied signed file {canonicalFull} to duplicate location: {duplicateFull}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to copy signed file from '{canonicalFull}' to '{duplicateFull}': {ex.Message}");
+                }
             }
         }
     }
