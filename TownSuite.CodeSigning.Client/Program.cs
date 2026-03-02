@@ -180,7 +180,8 @@ if (!string.IsNullOrWhiteSpace(token))
 try
 {
     bool failures = false;
-    failures = await ProcessFiles(filepaths, url, quickFail, ignoreFailures, folder, folderFilePairs, recursiveFolderFilePairs, detached);
+    failures = await ProcessFiles(filepaths, url, quickFail, ignoreFailures, folder, folderFilePairs, recursiveFolderFilePairs, detached,
+        excludeFolders);
 
     if (failures && !ignoreFailures)
     {
@@ -248,7 +249,7 @@ void PrintHelp()
 
 async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, bool ignoreFailures,
     string folder, List<(string Folder, string[] Files)> folderFilePairs,
-    List<(string Folder, string[] Files)> recursiveFolderFilePairs, bool detached = false, string[]? excludeFolderNames = null)
+    List<(string Folder, string[] Files)> recursiveFolderFilePairs, bool detached, string[]? excludeFolderNames)
 {
     var files = new List<string>();
 
