@@ -11,10 +11,10 @@ pipeline {
     }
     stages {
         stage('Start Automation Script') {
-            agent { label 'Proxmox-Ubuntu-Boot' }
+            agent { label 'starting-agent' }
             steps {
                 script {
-                    townsuite_automation2.proxmox_setup_linux_and_windows_async()
+                    townsuite_automation2.setup_linux_and_windows()
                 }
             }
         }    
@@ -111,10 +111,10 @@ pipeline {
 }
 
 def CleanupVirtualMachines() {
-    node('Stopping-Agent') {
+    node('stopping-agent') {
         cleanWs()
         script {
-            townsuite_automation2.proxmox_stop_automation()
+            townsuite_automation2.stop_automation()
         }
     }
 }
