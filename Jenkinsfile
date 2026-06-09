@@ -45,6 +45,8 @@ pipeline {
                         pwsh '''
                             (Get-AuthenticodeSignature -FilePath "build\\win-x64\\TownSuite.CodeSigning.Service\\TownSuite.CodeSigning.Service.dll").Status
                             (Get-AuthenticodeSignature -FilePath "build\\win-x64\\TownSuite.CodeSigning.Client\\TownSuite.CodeSigning.Client.dll").Status
+                            (Get-AuthenticodeSignature -FilePath "build\\win-arm64\\TownSuite.CodeSigning.Service\\TownSuite.CodeSigning.Service.dll").Status
+                            (Get-AuthenticodeSignature -FilePath "build\\win-arm64\\TownSuite.CodeSigning.Client\\TownSuite.CodeSigning.Client.dll").Status
                         '''
 
                         // zip and hashes
