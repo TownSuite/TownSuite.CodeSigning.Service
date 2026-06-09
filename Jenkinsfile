@@ -41,8 +41,8 @@ pipeline {
                             $url = [System.Uri]$env:CODESIGNING_SERVICE_URL
                             Write-Host "Resolving $($url.Host)..."
                             Resolve-DnsName $url.Host -ErrorAction SilentlyContinue | Format-Table -AutoSize
-                            Write-Host "Testing TCP connection to $($url.Host):$($url.Port)..."
-                            Test-NetConnection $url.Host -Port $url.Port
+                            Write-Host "Checking health endpoint..."
+                            Invoke-RestMethod -Uri "$($url.Scheme)://$($url.Host):$($url.Port)/healthz" -SkipCertificateCheck | ConvertTo-Json
                             '''
 
                             pwsh '''
