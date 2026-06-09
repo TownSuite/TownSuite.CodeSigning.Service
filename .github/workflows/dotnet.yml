@@ -22,10 +22,10 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
         with:
-          name: linux-x64
+          name: linux-builds
           path: |
-             build/*.zip
-              **/**/*.deb
+            build/*.zip
+            **/**/*.deb
           retention-days: 1
 
   windows-build:
@@ -41,8 +41,9 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
         with:
-          name: win-x64
+          name: windows-builds
           path: |
             build/win-x64
+            build/win-arm64
           retention-days: 1
 
