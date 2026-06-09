@@ -14,7 +14,7 @@ pipeline {
             agent { label 'starting-agent' }
             steps {
                 script {
-                    townsuite_automation2.setup_linux_and_windows()
+                    townsuite_automation2.start_linux_and_windows()
                 }
             }
         }    
