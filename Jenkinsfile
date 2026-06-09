@@ -36,6 +36,15 @@ pipeline {
                             string(credentialsId: 'codesigning_service_url', variable: 'CODESIGNING_SERVICE_URL'),
                             string(credentialsId: 'codesigning_auth_key', variable: 'CODESIGNING_AUTH_KEY')
                         ]) {
+                            // diagnose DNS/connectivity before signing attempt
+                            pwsh '''
+                            $url = [System.Uri]$env:CODESIGNING_SERVICE_URL
+                            Write-Host "Resolving $($url.Host)..."
+                            Resolve-DnsName $url.Host -ErrorAction SilentlyContinue | Format-Table -AutoSize
+                            Write-Host "Testing TCP connection to $($url.Host):$($url.Port)..."
+                            Test-NetConnection $url.Host -Port $url.Port
+                            '''
+
                             pwsh '''
                             $CodeSigningClient = ".\\TownSuite.CodeSigning.Client\\bin\\Release\\net10.0\\TownSuite.CodeSigning.Client.exe"
                             & $CodeSigningClient -rfolder "build|*TownSuite*.dll;*TownSuite*.exe" -url "$env:CODESIGNING_SERVICE_URL" -timeout 60000 -token "$env:CODESIGNING_AUTH_KEY" -ignorecerts
