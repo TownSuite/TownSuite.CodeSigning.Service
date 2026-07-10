@@ -10,6 +10,22 @@
         /// </summary>
         public long MaxRequestBodySize { get; init; }
         public int SemaphoreSlimProcessPerCpuLimit { get; init; }
+
+        /// <summary>
+        /// How long (in milliseconds) a readiness signing canary result is cached before the
+        /// next probe re-runs signtool. Prevents frequent readiness probes from hammering
+        /// signtool and the timestamp server. Defaults to 30000 when unset (0 or negative).
+        /// </summary>
+        public int HealthCheckCacheInMs { get; init; }
+
+        /// <summary>
+        /// Readiness fails if the signing queue has pending jobs but the background worker has
+        /// not finished a job within this many milliseconds (i.e. the queue is not draining).
+        /// Defaults to 60000 when unset (0 or negative). Should comfortably exceed
+        /// <see cref="SigntoolTimeoutInMs"/> so normal per-job time is not flagged as a stall.
+        /// </summary>
+        public int HealthCheckQueueStallInMs { get; init; }
+
         public OpenSSLSettings OpenSSL { get; init; }
 
     }

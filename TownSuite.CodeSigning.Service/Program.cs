@@ -1,11 +1,17 @@
 using TownSuite.CodeSigning.Service;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddHealthChecks();
+builder.Services.AddSingleton<SigningHealthCheck>();
+builder.Services.AddHealthChecks()
+    // Liveness: the process is up and able to respond. No external dependencies.
+    .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("Service is live."), tags: new[] { "live" })
+    // Readiness: verifies code signing actually works by signing a canary file.
+    .AddCheck<SigningHealthCheck>("signing", tags: new[] { "ready" });
 builder.Services.AddSingleton<Settings>(s => builder.Configuration.GetSection("Settings").Get<Settings>());
 builder.WebHost.UseKestrel(o =>
 {
@@ -129,7 +135,17 @@ static ISigner GetSigner(HttpRequest request, Settings settings, ILogger logger,
     return signer;
 }
 
+// /healthz runs every check (backwards compatible). /health/live is liveness only,
+// /health/ready fails when code signing is failing.
 app.MapHealthChecks("/healthz").AllowAnonymous();
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live")
+}).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+}).AllowAnonymous();
 app.Run();
 
 static bool IsDetachedRequest(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> headers)
