@@ -187,17 +187,62 @@ namespace TownSuite.CodeSigning.Client
                     if (batchDetached)
                     {
                         var sigPath = file.FilePath + ".sig";
-                        await using var sigStream = File.OpenWrite(sigPath);
-                        await resultStream.CopyToAsync(sigStream);
-                        goodFiles.Add(file);
-                        Console.WriteLine($"Detached signature saved: {sigPath}");
+                        await using (var sigStream = File.OpenWrite(sigPath))
+                        {
+                            await resultStream.CopyToAsync(sigStream);
+                        }
+
+                        // Verify the service actually returned a signature before treating this
+                        // as success - catches cases like signing silently failing but still
+                        // returning a 200 with empty/corrupt content.
+                        if (FileHelpers.HasValidDetachedSignature(file.FilePath, sigPath))
+                        {
+                            goodFiles.Add(file);
+                            Console.WriteLine($"Detached signature saved: {sigPath}");
+                        }
+                        else
+                        {
+                            const string message = "Downloaded detached signature is missing or invalid.";
+                            failedUploads.Add((file.FilePath, message));
+                            Console.WriteLine($"Verification failed for: {file.FilePath}");
+                            Console.WriteLine(message);
+
+                            if (quickFail && !ignoreFailures)
+                            {
+                                Console.WriteLine("Quick fail");
+                                Console.WriteLine($"Failed to sign file: {file.FilePath}");
+                                Console.WriteLine(message);
+                                Environment.Exit(-1);
+                            }
+                        }
                     }
                     else
                     {
-                        await using var fileStream = File.OpenWrite(file.FilePath);
-                        await resultStream.CopyToAsync(fileStream);
-                        goodFiles.Add(file);
-                        Console.WriteLine($"Signed file: {file.FilePath}");
+                        await using (var fileStream = File.OpenWrite(file.FilePath))
+                        {
+                            await resultStream.CopyToAsync(fileStream);
+                        }
+
+                        if (FileHelpers.HasEmbeddedDigitalSignature(file.FilePath))
+                        {
+                            goodFiles.Add(file);
+                            Console.WriteLine($"Signed file: {file.FilePath}");
+                        }
+                        else
+                        {
+                            const string message = "Downloaded file is missing a digital signature.";
+                            failedUploads.Add((file.FilePath, message));
+                            Console.WriteLine($"Verification failed for: {file.FilePath}");
+                            Console.WriteLine(message);
+
+                            if (quickFail && !ignoreFailures)
+                            {
+                                Console.WriteLine("Quick fail");
+                                Console.WriteLine($"Failed to sign file: {file.FilePath}");
+                                Console.WriteLine(message);
+                                Environment.Exit(-1);
+                            }
+                        }
                     }
                 }
                 else if ((int)response.StatusCode == 425)
