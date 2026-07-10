@@ -30,6 +30,9 @@ dotnet build -c Release TownSuite.CodeSigning.Service.sln
 dotnet publish TownSuite.CodeSigning.Client -c Release -r win-x64 -p:PublishReadyToRun=true --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true --output "$CURRENTPATH\build\win-x64\TownSuite.CodeSigning.Client"
 dotnet publish TownSuite.CodeSigning.Service -c Release -r win-x64 --output "$CURRENTPATH\build\win-x64\TownSuite.CodeSigning.Service"
 
+dotnet publish TownSuite.CodeSigning.Client -c Release -r win-arm64 -p:PublishReadyToRun=true --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true --output "$CURRENTPATH\build\win-arm64\TownSuite.CodeSigning.Client"
+dotnet publish TownSuite.CodeSigning.Service -c Release -r win-arm64 --output "$CURRENTPATH\build\win-arm64\TownSuite.CodeSigning.Service"
+
 $version = ""
 GetVersions ([ref] $version)  ([ref]"$CURRENTPATH\Directory.Build.props")
 

@@ -2,6 +2,9 @@ using NUnit.Framework;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Security.Cryptography.Pkcs;
+using System.Security.Cryptography.X509Certificates;
 
 namespace TownSuite.CodeSigning.ClientTests
 {
@@ -110,6 +113,118 @@ namespace TownSuite.CodeSigning.ClientTests
             var result = FileHelpers.CreateFileList(new[] { "test_detached.zip" }, _tempDir, isDetached: false);
             // When not detached, .zip is not a valid target and should be skipped
             Assert.IsEmpty(result);
+        }
+
+        [Test]
+        public void HasEmbeddedDigitalSignature_ReturnsTrue_ForSignedDll()
+        {
+            Assert.IsTrue(FileHelpers.HasEmbeddedDigitalSignature(_signedDllCopy));
+        }
+
+        [Test]
+        public void HasEmbeddedDigitalSignature_ReturnsFalse_ForUnsignedDll()
+        {
+            Assert.IsFalse(FileHelpers.HasEmbeddedDigitalSignature(_unsignedDllCopy));
+        }
+
+        [Test]
+        public void HasEmbeddedDigitalSignature_ReturnsFalse_WhenFileDoesNotExist()
+        {
+            Assert.IsFalse(FileHelpers.HasEmbeddedDigitalSignature(Path.Combine(_tempDir, "does-not-exist.dll")));
+        }
+    }
+
+    [TestFixture]
+    public class DetachedSignatureVerificationTests
+    {
+        private string _tempDir;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            Directory.CreateDirectory(_tempDir);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            try
+            {
+                if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true);
+            }
+            catch { /* ignore cleanup errors */ }
+        }
+
+        private static byte[] SignDetached(byte[] content)
+        {
+            using var rsa = RSA.Create(2048);
+            var req = new CertificateRequest("CN=FileHelpersTestCert", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+
+            var contentInfo = new ContentInfo(content);
+            var signedCms = new SignedCms(contentInfo, detached: true);
+            signedCms.ComputeSignature(new CmsSigner(cert));
+            return signedCms.Encode();
+        }
+
+        [Test]
+        public void HasValidDetachedSignature_ReturnsTrue_ForValidSignature()
+        {
+            string original = Path.Combine(_tempDir, "orig.bin");
+            byte[] content = { 1, 2, 3, 4, 5 };
+            File.WriteAllBytes(original, content);
+
+            string sigPath = original + ".sig";
+            File.WriteAllBytes(sigPath, SignDetached(content));
+
+            Assert.IsTrue(FileHelpers.HasValidDetachedSignature(original, sigPath));
+        }
+
+        [Test]
+        public void HasValidDetachedSignature_ReturnsFalse_WhenSigFileIsMissing()
+        {
+            string original = Path.Combine(_tempDir, "orig.bin");
+            File.WriteAllBytes(original, new byte[] { 1, 2, 3 });
+
+            Assert.IsFalse(FileHelpers.HasValidDetachedSignature(original, original + ".sig"));
+        }
+
+        [Test]
+        public void HasValidDetachedSignature_ReturnsFalse_WhenSigFileIsEmpty()
+        {
+            string original = Path.Combine(_tempDir, "orig.bin");
+            File.WriteAllBytes(original, new byte[] { 1, 2, 3 });
+
+            string sigPath = original + ".sig";
+            File.WriteAllBytes(sigPath, Array.Empty<byte>());
+
+            Assert.IsFalse(FileHelpers.HasValidDetachedSignature(original, sigPath));
+        }
+
+        [Test]
+        public void HasValidDetachedSignature_ReturnsFalse_WhenSigFileIsGarbage()
+        {
+            string original = Path.Combine(_tempDir, "orig.bin");
+            File.WriteAllBytes(original, new byte[] { 1, 2, 3 });
+
+            string sigPath = original + ".sig";
+            File.WriteAllBytes(sigPath, new byte[] { 0xDE, 0xAD, 0xBE, 0xEF });
+
+            Assert.IsFalse(FileHelpers.HasValidDetachedSignature(original, sigPath));
+        }
+
+        [Test]
+        public void HasValidDetachedSignature_ReturnsFalse_WhenSignatureIsForDifferentContent()
+        {
+            byte[] signedContent = { 9, 9, 9 };
+            string original = Path.Combine(_tempDir, "orig.bin");
+            File.WriteAllBytes(original, new byte[] { 1, 2, 3 }); // different content than what was signed
+
+            string sigPath = original + ".sig";
+            File.WriteAllBytes(sigPath, SignDetached(signedContent));
+
+            Assert.IsFalse(FileHelpers.HasValidDetachedSignature(original, sigPath));
         }
     }
 

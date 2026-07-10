@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography;
+using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 
 public static class FileHelpers
@@ -26,7 +27,12 @@ public static class FileHelpers
         return true;
     }
 
-    static bool FileAlreadyHasDigitalSignature(string file)
+    /// <summary>
+    /// Checks whether a file has an embedded Authenticode signature. Used both to skip files
+    /// that are already signed before upload, and to verify that a file returned by the signing
+    /// service actually has a signature attached before treating the download as successful.
+    /// </summary>
+    public static bool HasEmbeddedDigitalSignature(string file)
     {
         try
         {
@@ -44,6 +50,47 @@ public static class FileHelpers
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Checks that a detached signature file is a valid CMS SignedData blob that actually
+    /// covers the given original file's bytes. The client does not have the signing service's
+    /// public certificate, so this cannot validate trust/chain (verifySignatureOnly) - it
+    /// confirms the signature is cryptographically valid over this exact content rather than
+    /// missing, empty, corrupt, or left over from a different file.
+    /// </summary>
+    public static bool HasValidDetachedSignature(string originalFilePath, string signatureFilePath)
+    {
+        try
+        {
+            if (!System.IO.File.Exists(signatureFilePath))
+            {
+                return false;
+            }
+
+            byte[] signatureBytes = System.IO.File.ReadAllBytes(signatureFilePath);
+            if (signatureBytes.Length == 0)
+            {
+                return false;
+            }
+
+            byte[] originalBytes = System.IO.File.ReadAllBytes(originalFilePath);
+            var contentInfo = new ContentInfo(originalBytes);
+            var signedCms = new SignedCms(contentInfo, detached: true);
+            signedCms.Decode(signatureBytes);
+
+            if (signedCms.SignerInfos.Count == 0)
+            {
+                return false;
+            }
+
+            signedCms.CheckSignature(verifySignatureOnly: true);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     public static List<string> CreateFileList(string[] filepaths, string folder, bool isDetached)
@@ -95,7 +142,7 @@ public static class FileHelpers
         var finalFiles = new List<string>();
         foreach (var file in files)
         {
-            if (IsValidFile(file, isDetached) && !FileAlreadyHasDigitalSignature(file))
+            if (IsValidFile(file, isDetached) && !HasEmbeddedDigitalSignature(file))
             {
                 finalFiles.Add(file);
             }
@@ -245,7 +292,7 @@ public static class FileHelpers
         var finalFiles = new List<string>();
         foreach (var file in allFiles)
         {
-            if (IsValidFile(file, isDetached) && !FileAlreadyHasDigitalSignature(file))
+            if (IsValidFile(file, isDetached) && !HasEmbeddedDigitalSignature(file))
             {
                 finalFiles.Add(file);
             }
