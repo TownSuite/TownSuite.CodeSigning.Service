@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TownSuite.CodeSigning.Service\TownSuite.CodeSigning.Service.csproj" />
+    <ProjectReference Include="..\TownSuite.CodeSigning.Client\TownSuite.CodeSigning.Client.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -53,11 +53,19 @@ public static class FileHelpers
     }
 
     /// <summary>
-    /// Checks that a detached signature file is a valid CMS SignedData blob that actually
-    /// covers the given original file's bytes. The client does not have the signing service's
-    /// public certificate, so this cannot validate trust/chain (verifySignatureOnly) - it
-    /// confirms the signature is cryptographically valid over this exact content rather than
-    /// missing, empty, corrupt, or left over from a different file.
+    /// Checks that a detached signature file is a structurally valid CMS SignedData blob
+    /// carrying a signer and an embedded certificate - the certificate lives in this side-by-side
+    /// .sig file, never in the original dll/exe/zip.
+    ///
+    /// This is a structural check only, not a content-hash verification. The signing service's
+    /// OpenSSL invocation signs without "-binary", so it applies S/MIME text canonicalization
+    /// (CRLF normalization) to the content before hashing. Recomputing that transform here to
+    /// verify the digest would mean reimplementing OpenSSL's canonicalization byte-for-byte in
+    /// .NET; probing it directly showed it does not survive a clean round-trip for arbitrary
+    /// binary content (e.g. embedded NUL bytes were lost), so a from-scratch reimplementation
+    /// cannot be trusted not to reject legitimately signed files. As a result this check catches
+    /// a missing, empty, or corrupt .sig, but will not detect a structurally valid signature that
+    /// was produced over different content.
     /// </summary>
     public static bool HasValidDetachedSignature(string originalFilePath, string signatureFilePath)
     {
@@ -79,13 +87,7 @@ public static class FileHelpers
             var signedCms = new SignedCms(contentInfo, detached: true);
             signedCms.Decode(signatureBytes);
 
-            if (signedCms.SignerInfos.Count == 0)
-            {
-                return false;
-            }
-
-            signedCms.CheckSignature(verifySignatureOnly: true);
-            return true;
+            return signedCms.SignerInfos.Count > 0 && signedCms.Certificates.Count > 0;
         }
         catch (Exception)
         {
