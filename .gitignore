@@ -363,3 +363,4 @@ MigrationBackup/
 FodyWeavers.xsd
 build/
 /TownSuite.CodeSigning.Client/Properties/launchSettings.json
+/.claude/settings.local.json
