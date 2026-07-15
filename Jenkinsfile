@@ -83,7 +83,7 @@ pipeline {
                         }
                     }
                 }
-                stage('Linux Build') {
+                stage('Linux Build and Code Signing') {
                     agent { label townsuite_automation2.get_ubuntu_label() }
                     steps {
                         script {
@@ -92,11 +92,55 @@ pipeline {
 
                         sh '''
                         apt update
-                        apt install -y zip ruby
+                        apt install -y zip ruby osslsigncode
                         chmod +x ./build_linux.sh
                         ./build_linux.sh
                         '''
-                    
+
+                        // code signing with the linux client build; the client verifies each
+                        // downloaded file client-side (cross-platform PE Authenticode check)
+                        // and exits non-zero if verification fails
+                        withCredentials([
+                            string(credentialsId: 'codesigning_service_url', variable: 'CODESIGNING_SERVICE_URL'),
+                            string(credentialsId: 'codesigning_auth_key', variable: 'CODESIGNING_AUTH_KEY')
+                        ]) {
+                            // diagnose DNS/connectivity before signing attempt
+                            sh '''
+                            HOST=$(echo "$CODESIGNING_SERVICE_URL" | sed -E 's|^[a-z]+://([^:/]+).*|\\1|')
+                            echo "Resolving $HOST..."
+                            getent hosts "$HOST" || true
+                            echo "Checking health endpoint..."
+                            curl -sk "$(echo "$CODESIGNING_SERVICE_URL" | sed -E 's|(/sign)?/*$||')/healthz"
+                            '''
+
+                            sh '''
+                            CodeSigningClient="./build/linux-x64/TownSuite.CodeSigning.Client/TownSuite.CodeSigning.Client"
+                            chmod +x "$CodeSigningClient"
+                            "$CodeSigningClient" -rfolder "build|*TownSuite*.dll;*TownSuite*.exe" -excludefolders "pkg-linux-amd64;pkg-linux-arm64" -url "$CODESIGNING_SERVICE_URL" -timeout 60000 -token "$CODESIGNING_AUTH_KEY" -ignorecerts
+                            '''
+                        }
+
+                        // informational signature status, mirrors the windows
+                        // Get-AuthenticodeSignature step
+                        sh '''
+                        osslsigncode verify -in "build/linux-x64/TownSuite.CodeSigning.Service/TownSuite.CodeSigning.Service.dll" || true
+                        osslsigncode verify -in "build/linux-arm64/TownSuite.CodeSigning.Service/TownSuite.CodeSigning.Service.dll" || true
+                        '''
+
+                        // build_linux.sh zips before signing runs, so re-pack the Service zips
+                        // (the only ones whose contents changed) with the signed dlls. The
+                        // Client zips/debs hold a single-file ELF which is not Authenticode
+                        // signable and are left as built.
+                        sh '''
+                        VERSION=$(cat Directory.Build.props | grep "<Version>" | sed 's/[^0-9.]*//g')
+                        cd build
+                        rm -f "TownSuite.CodeSigning.Service-$VERSION-linux-x64.zip" "TownSuite.CodeSigning.Service-$VERSION-linux-arm64.zip"
+                        zip -r "TownSuite.CodeSigning.Service-$VERSION-linux-x64.zip" linux-x64/TownSuite.CodeSigning.Service
+                        zip -r "TownSuite.CodeSigning.Service-$VERSION-linux-arm64.zip" linux-arm64/TownSuite.CodeSigning.Service
+                        sha256sum "TownSuite.CodeSigning.Service-$VERSION-linux-x64.zip" > "TownSuite.CodeSigning.Service-$VERSION-linux-x64.zip.SHA256SUMS"
+                        sha256sum "TownSuite.CodeSigning.Service-$VERSION-linux-arm64.zip" > "TownSuite.CodeSigning.Service-$VERSION-linux-arm64.zip.SHA256SUMS"
+                        '''
+
                         echo 'archiving artifacts'
                         script {
                             townsuite.archiveWithRetryAndLock('build/*.zip,build/*.SHA256SUMS', 3)

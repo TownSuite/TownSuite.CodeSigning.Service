@@ -132,6 +132,63 @@ namespace TownSuite.CodeSigning.ClientTests
         {
             Assert.IsFalse(FileHelpers.HasEmbeddedDigitalSignature(Path.Combine(_tempDir, "does-not-exist.dll")));
         }
+
+        // The PE parser is what makes signature detection work on Linux, where the
+        // X509Certificate2 fallback cannot read Authenticode signatures out of PE files.
+        // Exercising it directly proves the cross-platform path works without that fallback.
+        [Test]
+        public void HasPeAuthenticodeSignature_ReturnsTrue_ForSignedDll()
+        {
+            Assert.IsTrue(FileHelpers.HasPeAuthenticodeSignature(_signedDllCopy));
+        }
+
+        [Test]
+        public void HasPeAuthenticodeSignature_ReturnsFalse_ForUnsignedDll()
+        {
+            Assert.IsFalse(FileHelpers.HasPeAuthenticodeSignature(_unsignedDllCopy));
+        }
+
+        [Test]
+        public void HasPeAuthenticodeSignature_ReturnsFalse_ForNonPeFile()
+        {
+            string textFile = Path.Combine(_tempDir, "not-a-pe.dll");
+            File.WriteAllText(textFile, "this is not a portable executable");
+            Assert.IsFalse(FileHelpers.HasPeAuthenticodeSignature(textFile));
+        }
+
+        [Test]
+        public void HasPeAuthenticodeSignature_ReturnsFalse_ForTruncatedPeFile()
+        {
+            // Valid DOS magic but the file ends before the PE header can exist.
+            string truncated = Path.Combine(_tempDir, "truncated.dll");
+            File.WriteAllBytes(truncated, new byte[] { 0x4D, 0x5A, 0x90, 0x00 });
+            Assert.IsFalse(FileHelpers.HasPeAuthenticodeSignature(truncated));
+        }
+
+        [Test]
+        public void HasPeAuthenticodeSignature_ReturnsFalse_WhenCertTableContainsGarbage()
+        {
+            // Take the signed dll and corrupt the start of the PKCS#7 blob the certificate
+            // table points at (its outer ASN.1 SEQUENCE header), leaving the WIN_CERTIFICATE
+            // header intact - the SignedCms decode should reject it.
+            byte[] bytes = File.ReadAllBytes(_signedDllCopy);
+
+            uint peHeaderOffset = BitConverter.ToUInt32(bytes, 0x3C);
+            ushort magic = BitConverter.ToUInt16(bytes, (int)peHeaderOffset + 24);
+            int dataDirectoriesOffset = (int)peHeaderOffset + 24 + (magic == 0x20B ? 112 : 96);
+            uint certTableOffset = BitConverter.ToUInt32(bytes, dataDirectoriesOffset + 4 * 8);
+            Assert.That(certTableOffset, Is.Not.Zero, "test asset should carry a certificate table");
+
+            int pkcs7Start = (int)certTableOffset + 8; // skip the WIN_CERTIFICATE header
+            for (int i = 0; i < 16; i++)
+            {
+                bytes[pkcs7Start + i] ^= 0xFF;
+            }
+
+            string corrupted = Path.Combine(_tempDir, "corrupted_signature.dll");
+            File.WriteAllBytes(corrupted, bytes);
+            Assert.IsFalse(FileHelpers.HasPeAuthenticodeSignature(corrupted));
+        }
     }
 
     [TestFixture]

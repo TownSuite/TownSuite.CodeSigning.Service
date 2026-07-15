@@ -31,25 +31,129 @@ public static class FileHelpers
     /// Checks whether a file has an embedded Authenticode signature. Used both to skip files
     /// that are already signed before upload, and to verify that a file returned by the signing
     /// service actually has a signature attached before treating the download as successful.
+    ///
+    /// PE files (exe/dll/sys/ocx) are checked by reading the Certificate Table out of the PE
+    /// header, which works on any OS. Non-PE containers (msi/cab/msix/appx) fall back to
+    /// X509Certificate2, which can only extract an Authenticode signer on Windows - so on Linux
+    /// those container formats always report unsigned.
     /// </summary>
     public static bool HasEmbeddedDigitalSignature(string file)
     {
-        try
+        if (HasPeAuthenticodeSignature(file))
         {
-            using (var cert = new X509Certificate2(file))
+            return true;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            try
             {
-                if (cert != null)
+                using (var cert = new X509Certificate2(file))
                 {
-                    return true;
+                    if (cert != null)
+                    {
+                        return true;
+                    }
                 }
             }
-        }
-        catch (Exception)
-        {
-            // Ignore any exceptions
+            catch (Exception)
+            {
+                // Ignore any exceptions
+            }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Cross-platform Authenticode presence check: locates the Certificate Table entry in the
+    /// PE optional header's data directories and decodes the WIN_CERTIFICATE blob it points at
+    /// as CMS SignedData. Returns false for anything that is not a signed PE file.
+    /// </summary>
+    internal static bool HasPeAuthenticodeSignature(string file)
+    {
+        try
+        {
+            using var fs = System.IO.File.OpenRead(file);
+            using var reader = new BinaryReader(fs);
+
+            if (fs.Length < 0x40 || reader.ReadUInt16() != 0x5A4D) // "MZ"
+            {
+                return false;
+            }
+
+            fs.Position = 0x3C;
+            uint peHeaderOffset = reader.ReadUInt32();
+            if (peHeaderOffset + 24 > fs.Length)
+            {
+                return false;
+            }
+
+            fs.Position = peHeaderOffset;
+            if (reader.ReadUInt32() != 0x00004550) // "PE\0\0"
+            {
+                return false;
+            }
+
+            // COFF header is 20 bytes; the optional header follows it.
+            long optionalHeaderOffset = peHeaderOffset + 24;
+            fs.Position = optionalHeaderOffset;
+            ushort magic = reader.ReadUInt16();
+
+            // Data directories start at offset 96 (PE32, magic 0x10B) or 112 (PE32+, magic 0x20B)
+            // within the optional header; the Certificate Table is directory index 4.
+            long dataDirectoriesOffset;
+            if (magic == 0x10B)
+            {
+                dataDirectoriesOffset = optionalHeaderOffset + 96;
+            }
+            else if (magic == 0x20B)
+            {
+                dataDirectoriesOffset = optionalHeaderOffset + 112;
+            }
+            else
+            {
+                return false;
+            }
+
+            fs.Position = dataDirectoriesOffset - 4;
+            uint numberOfRvaAndSizes = reader.ReadUInt32();
+            if (numberOfRvaAndSizes < 5)
+            {
+                return false;
+            }
+
+            fs.Position = dataDirectoriesOffset + 4 * 8;
+            uint certTableOffset = reader.ReadUInt32(); // a file offset, not an RVA
+            uint certTableSize = reader.ReadUInt32();
+
+            // WIN_CERTIFICATE header is 8 bytes: dwLength, wRevision, wCertificateType.
+            if (certTableOffset == 0 || certTableSize < 8
+                || (long)certTableOffset + certTableSize > fs.Length)
+            {
+                return false;
+            }
+
+            fs.Position = certTableOffset;
+            uint certLength = reader.ReadUInt32();
+            fs.Position += 2; // wRevision
+            ushort certType = reader.ReadUInt16();
+
+            const ushort WIN_CERT_TYPE_PKCS_SIGNED_DATA = 0x0002;
+            if (certType != WIN_CERT_TYPE_PKCS_SIGNED_DATA || certLength < 8 || certLength > certTableSize)
+            {
+                return false;
+            }
+
+            byte[] pkcs7 = reader.ReadBytes((int)certLength - 8);
+            var signedCms = new SignedCms();
+            signedCms.Decode(pkcs7);
+            return signedCms.SignerInfos.Count > 0;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>
