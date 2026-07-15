@@ -271,8 +271,11 @@ async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, b
 
     if (files.Count == 0)
     {
-        Console.WriteLine("No files found to sign.");
-        return false;
+        // An empty file list means the patterns matched nothing (or everything was
+        // already signed) - treat it as a failure so a misconfigured pipeline cannot
+        // silently pass as if signing succeeded. Use -ignorefailures to opt out.
+        Console.WriteLine("No files found to sign. Failing verification.");
+        return true;
     }
 
     // Deduplicate files by content hash so each unique file is only signed once
