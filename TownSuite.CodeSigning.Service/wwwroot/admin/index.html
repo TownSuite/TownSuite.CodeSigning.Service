@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>TownSuite Code Signing - Admin Status</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ok: #2e7d32;
+    --warning: #b26a00;
+    --error: #c62828;
+    --border: #d0d0d0;
+    --bg-card: #ffffff10;
+  }
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin: 0 0 4px 0;
+  }
+  #lastUpdated {
+    color: gray;
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+  #errorBanner {
+    display: none;
+    background: var(--error);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: var(--bg-card);
+  }
+  .card h2 {
+    font-size: 1rem;
+    margin: 0 0 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    background: gray;
+  }
+  .dot.ok { background: var(--ok); }
+  .dot.warning { background: var(--warning); }
+  .dot.error { background: var(--error); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  table td {
+    padding: 3px 4px;
+    vertical-align: top;
+  }
+  table td:first-child {
+    color: gray;
+    white-space: nowrap;
+    padding-right: 10px;
+  }
+  .state-ok { color: var(--ok); font-weight: 600; }
+  .state-warning { color: var(--warning); font-weight: 600; }
+  .state-error, .state-expired { color: var(--error); font-weight: 600; }
+  .cert-block:not(:first-child) {
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+</style>
+</head>
+<body>
+  <h1>TownSuite Code Signing &mdash; Admin Status</h1>
+  <div id="lastUpdated">loading...</div>
+  <div id="errorBanner"></div>
+  <div class="grid" id="grid"></div>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const lastUpdated = document.getElementById('lastUpdated');
+    const errorBanner = document.getElementById('errorBanner');
+
+    function el(tag, className, text) {
+      const e = document.createElement(tag);
+      if (className) e.className = className;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+
+    function row(table, label, value) {
+      const tr = document.createElement('tr');
+      const td1 = el('td', null, label);
+      const td2 = el('td', null, value === null || value === undefined ? '-' : String(value));
+      tr.appendChild(td1);
+      tr.appendChild(td2);
+      table.appendChild(tr);
+    }
+
+    function statusDotClass(status) {
+      if (!status) return '';
+      const s = status.toLowerCase();
+      if (s === 'healthy' || s === 'ok') return 'ok';
+      if (s === 'degraded' || s === 'warning') return 'warning';
+      return 'error';
+    }
+
+    function card(title, dotClass) {
+      const c = el('div', 'card');
+      const h = el('h2');
+      h.appendChild(el('span', 'dot ' + (dotClass || '')));
+      h.appendChild(document.createTextNode(title));
+      c.appendChild(h);
+      return c;
+    }
+
+    function buildServiceCard(data) {
+      const c = card('Service', 'ok');
+      const t = document.createElement('table');
+      row(t, 'Version', data.service.version);
+      row(t, 'Environment', data.service.environment);
+      row(t, 'Machine', data.service.machineName);
+      row(t, 'Uptime', formatDuration(data.service.uptimeSeconds));
+      row(t, 'Started', new Date(data.service.processStartTimeUtc).toLocaleString());
+      c.appendChild(t);
+      return c;
+    }
+
+    function buildHealthCard(health) {
+      if (!health) {
+        const c = card('Health', '');
+        c.appendChild(el('div', null, 'Not available'));
+        return c;
+      }
+      const c = card('Health', statusDotClass(health.status));
+      const t = document.createElement('table');
+      row(t, 'Overall', health.status);
+      row(t, 'Duration', health.totalDurationMs.toFixed(1) + ' ms');
+      c.appendChild(t);
+      (health.checks || []).forEach(chk => {
+        const sub = el('div', null);
+        sub.style.marginTop = '6px';
+        sub.appendChild(el('strong', statusDotClass(chk.status) === 'ok' ? 'state-ok' : (statusDotClass(chk.status) === 'warning' ? 'state-warning' : 'state-error'), chk.name + ': ' + chk.status));
+        if (chk.description) {
+          sub.appendChild(document.createElement('br'));
+          sub.appendChild(document.createTextNode(chk.description));
+        }
+        c.appendChild(sub);
+      });
+      return c;
+    }
+
+    function buildQueueCard(queue) {
+      const dot = queue.failed > 0 && queue.depth > 0 ? 'warning' : (queue.workerRunning || queue.depth === 0 ? 'ok' : 'warning');
+      const c = card('Queue', dot);
+      const t = document.createElement('table');
+      row(t, 'Depth', queue.depth);
+      row(t, 'In flight', queue.inFlight);
+      row(t, 'Completed', queue.completed);
+      row(t, 'Failed', queue.failed);
+      row(t, 'Worker running', queue.workerRunning);
+      row(t, 'Last activity', queue.lastActivityUtc ? new Date(queue.lastActivityUtc).toLocaleString() : 'never');
+      row(t, 'Idle for', queue.secondsSinceLastActivity !== null && queue.secondsSinceLastActivity !== undefined ? formatDuration(queue.secondsSinceLastActivity) : '-');
+      c.appendChild(t);
+      return c;
+    }
+
+    function buildConcurrencyCard(concurrency) {
+      const c = card('Concurrency', concurrency.maxSlots === null ? 'error' : 'ok');
+      const t = document.createElement('table');
+      row(t, 'Max slots', concurrency.maxSlots);
+      row(t, 'Available', concurrency.availableSlots);
+      row(t, 'In use', concurrency.inUse);
+      c.appendChild(t);
+      return c;
+    }
+
+    function buildCertificatesCard(certificates) {
+      const worst = (certificates || []).reduce((acc, cert) => {
+        const order = { ok: 0, warning: 1, expired: 2, error: 2 };
+        return (order[cert.state] || 0) > (order[acc] || 0) ? cert.state : acc;
+      }, 'ok');
+      const c = card('Certificates', statusDotClass(worst));
+      if (!certificates || certificates.length === 0) {
+        c.appendChild(el('div', null, 'Not configured'));
+        return c;
+      }
+      certificates.forEach(cert => {
+        const block = el('div', 'cert-block');
+        const t = document.createElement('table');
+        row(t, 'Role', cert.role);
+        row(t, 'File', cert.file);
+        if (cert.error) {
+          row(t, 'Error', cert.error);
+        } else {
+          row(t, 'Subject', cert.subject);
+          row(t, 'Thumbprint', cert.thumbprint);
+          row(t, 'Expires', cert.notAfter ? new Date(cert.notAfter).toLocaleString() : '-');
+          row(t, 'Days left', cert.daysUntilExpiry !== null ? Math.floor(cert.daysUntilExpiry) : '-');
+        }
+        const stateEl = el('span', 'state-' + cert.state, cert.state);
+        block.appendChild(t);
+        const stateRow = el('div', null);
+        stateRow.appendChild(document.createTextNode('State: '));
+        stateRow.appendChild(stateEl);
+        block.appendChild(stateRow);
+        c.appendChild(block);
+      });
+      return c;
+    }
+
+    function buildBatchCard(batch) {
+      const c = card('Batch folder', 'ok');
+      const t = document.createElement('table');
+      row(t, 'Path', batch.tempFolder);
+      row(t, 'Pending job folders', batch.pendingJobFolders !== null ? batch.pendingJobFolders : 'unknown');
+      c.appendChild(t);
+      return c;
+    }
+
+    function formatDuration(totalSeconds) {
+      if (totalSeconds === null || totalSeconds === undefined) return '-';
+      let s = Math.floor(totalSeconds);
+      const days = Math.floor(s / 86400); s -= days * 86400;
+      const hours = Math.floor(s / 3600); s -= hours * 3600;
+      const minutes = Math.floor(s / 60); s -= minutes * 60;
+      const parts = [];
+      if (days) parts.push(days + 'd');
+      if (hours) parts.push(hours + 'h');
+      if (minutes) parts.push(minutes + 'm');
+      parts.push(s + 's');
+      return parts.join(' ');
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch('status', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+
+        grid.innerHTML = '';
+        grid.appendChild(buildServiceCard(data));
+        grid.appendChild(buildHealthCard(data.health));
+        grid.appendChild(buildQueueCard(data.queue));
+        grid.appendChild(buildConcurrencyCard(data.concurrency));
+        grid.appendChild(buildCertificatesCard(data.certificates));
+        grid.appendChild(buildBatchCard(data.batch));
+
+        lastUpdated.textContent = 'Last updated ' + new Date().toLocaleTimeString();
+        errorBanner.style.display = 'none';
+      } catch (err) {
+        errorBanner.textContent = 'Failed to refresh status: ' + err.message;
+        errorBanner.style.display = 'block';
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
