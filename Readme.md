@@ -128,6 +128,31 @@ Notes:
 - Duplicate zip content across multiple folders is deduplicated by the client; signatures are created once and copied to duplicates.
 
 
+# Admin status dashboard
+
+A browser dashboard is available at `/admin/` showing service uptime/version, signing queue depth/in-flight/completed/failed counts, worker health, concurrency slots, configured certificate expiry, and pending batch job folders. It polls `GET /admin/status`, which returns the same data as JSON for monitoring tools:
+
+```bash
+curl --location 'https://localhost:7153/admin/status'
+```
+
+**Anonymous by design**: both `/admin/` and `/admin/status` are reachable without a JWT, the same as `/healthz` and `/health/*`, even when JWT auth is enabled for `/sign*`. This is a deliberate trade-off for services running on a trusted internal network — the endpoint discloses machine name, queue counters, certificate subject/thumbprint/expiry, and the batch temp-folder path. If the service is exposed beyond a trusted network, put it behind a reverse proxy that restricts access to `/admin/*`.
+
+To include certificate expiry in the dashboard, set these under `Settings` (and `Settings:OpenSSL` for the detached-signing cert) in `appsettings.json` — both are optional and skipped when empty:
+
+```jsonc
+"Settings": {
+  "CertificatePath": "{BaseDirectory}testcert.pfx",
+  "CertificatePassword": "password",
+  "CertificateWarningDays": 30,
+  "OpenSSL": {
+    "SignerCertPath": "{BaseDirectory}testcert.crt"
+  }
+}
+```
+
+`CertificateWarningDays` controls when a certificate's status flips from `ok` to `warning` in the dashboard (default 30 days before expiry).
+
 # Windows Defender Exclusion
 
 For increased performance add the services working directory to the windows defender exclusion path.

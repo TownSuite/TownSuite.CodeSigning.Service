@@ -1,5 +1,6 @@
 using TownSuite.CodeSigning.Service;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -13,6 +14,7 @@ builder.Services.AddHealthChecks()
     // Readiness: verifies code signing actually works by signing a canary file.
     .AddCheck<SigningHealthCheck>("signing", tags: new[] { "ready" });
 builder.Services.AddSingleton<Settings>(s => builder.Configuration.GetSection("Settings").Get<Settings>());
+builder.Services.AddSingleton<StatusService>();
 builder.WebHost.UseKestrel(o =>
 {
     var settings = builder.Configuration.GetSection("Settings").Get<Settings>();
@@ -64,6 +66,8 @@ Queuing.SetSemaphore(builder.Configuration.GetSection("Settings").Get<Settings>(
 // Configure the HTTP request pipeline.
 
 app.UseHttpsRedirection();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 var log = app.Services.GetService<ILogger>();
 
@@ -146,6 +150,13 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready")
 }).AllowAnonymous();
+
+// Anonymous by design: operators need a status view reachable without a token, matching the
+// health endpoints above. See Readme.md "Admin status dashboard" for the trade-off.
+app.MapGet("/admin/status", async (StatusService status, HealthCheckService health, CancellationToken ct) =>
+    Results.Ok(await status.GetStatusAsync(health, ct)))
+   .AllowAnonymous();
+
 app.Run();
 
 static bool IsDetachedRequest(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> headers)
