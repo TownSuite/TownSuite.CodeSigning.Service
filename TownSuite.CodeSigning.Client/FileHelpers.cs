@@ -33,15 +33,24 @@ public static class FileHelpers
     /// service actually has a signature attached before treating the download as successful.
     ///
     /// PE files (exe/dll/sys/ocx) are checked by reading the Certificate Table out of the PE
-    /// header, which works on any OS. Non-PE containers (msi/cab/msix/appx) fall back to
-    /// X509Certificate2, which can only extract an Authenticode signer on Windows - so on Linux
-    /// those container formats always report unsigned.
+    /// header, which works on any OS and is authoritative - an unsigned PE has no cert table entry
+    /// regardless of platform. The X509Certificate2 fallback only runs for non-PE containers
+    /// (msi/cab/msix/appx), where it can extract an Authenticode signer on Windows only (on Linux
+    /// those container formats always report unsigned). It must not run for PE files: repackaged
+    /// Electron/Chromium exe content has been observed to false-positive as "signed" when the whole
+    /// file is handed to X509Certificate2, even though HasPeAuthenticodeSignature correctly reports
+    /// no certificate table entry.
     /// </summary>
     public static bool HasEmbeddedDigitalSignature(string file)
     {
         if (HasPeAuthenticodeSignature(file))
         {
             return true;
+        }
+
+        if (IsPeFile(file))
+        {
+            return false;
         }
 
         if (OperatingSystem.IsWindows())
@@ -63,6 +72,39 @@ public static class FileHelpers
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Checks the MZ/PE magic bytes only - used to decide whether the Certificate Table check in
+    /// HasPeAuthenticodeSignature is authoritative (true PE files) or whether the X509Certificate2
+    /// fallback should be tried instead (non-PE containers such as msi/cab/msix/appx).
+    /// </summary>
+    internal static bool IsPeFile(string file)
+    {
+        try
+        {
+            using var fs = System.IO.File.OpenRead(file);
+            using var reader = new BinaryReader(fs);
+
+            if (fs.Length < 0x40 || reader.ReadUInt16() != 0x5A4D) // "MZ"
+            {
+                return false;
+            }
+
+            fs.Position = 0x3C;
+            uint peHeaderOffset = reader.ReadUInt32();
+            if (peHeaderOffset + 4 > fs.Length)
+            {
+                return false;
+            }
+
+            fs.Position = peHeaderOffset;
+            return reader.ReadUInt32() == 0x00004550; // "PE\0\0"
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>
