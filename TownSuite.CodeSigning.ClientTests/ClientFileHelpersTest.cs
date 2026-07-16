@@ -189,6 +189,44 @@ namespace TownSuite.CodeSigning.ClientTests
             File.WriteAllBytes(corrupted, bytes);
             Assert.IsFalse(FileHelpers.HasPeAuthenticodeSignature(corrupted));
         }
+
+        // IsPeFile gates the X509Certificate2 fallback in HasEmbeddedDigitalSignature so it only
+        // runs for non-PE containers (msi/cab/msix/appx). Without this gate, repackaged
+        // Electron/Chromium exe content was observed to false-positive as "signed" when handed
+        // whole to X509Certificate2, even though it has no Certificate Table entry - which made
+        // the client silently skip signing those exes. See HasEmbeddedDigitalSignature doc comment.
+        [Test]
+        public void IsPeFile_ReturnsTrue_ForValidPeFile()
+        {
+            Assert.IsTrue(FileHelpers.IsPeFile(_unsignedDllCopy));
+        }
+
+        [Test]
+        public void IsPeFile_ReturnsFalse_ForNonPeFile()
+        {
+            string textFile = Path.Combine(_tempDir, "not-a-pe.dll");
+            File.WriteAllText(textFile, "this is not a portable executable");
+            Assert.IsFalse(FileHelpers.IsPeFile(textFile));
+        }
+
+        [Test]
+        public void IsPeFile_ReturnsFalse_ForTruncatedFile()
+        {
+            string truncated = Path.Combine(_tempDir, "truncated.dll");
+            File.WriteAllBytes(truncated, new byte[] { 0x4D, 0x5A, 0x90, 0x00 });
+            Assert.IsFalse(FileHelpers.IsPeFile(truncated));
+        }
+
+        [Test]
+        public void HasEmbeddedDigitalSignature_DoesNotFallBackToX509Certificate2_ForUnsignedPeFile()
+        {
+            // Regression guard: an unsigned PE must report unsigned even on Windows, without
+            // relying on X509Certificate2 - that fallback is what previously false-positived on
+            // Electron/Chromium exe content and caused the client to skip signing it.
+            Assert.IsTrue(FileHelpers.IsPeFile(_unsignedDllCopy));
+            Assert.IsFalse(FileHelpers.HasPeAuthenticodeSignature(_unsignedDllCopy));
+            Assert.IsFalse(FileHelpers.HasEmbeddedDigitalSignature(_unsignedDllCopy));
+        }
     }
 
     [TestFixture]
