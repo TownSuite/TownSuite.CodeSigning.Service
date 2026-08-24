@@ -104,9 +104,9 @@ namespace TownSuite.CodeSigning.Service
             return (p.ExitCode == 0, output);
         }
 
-        public string GetFileName(string id)
+        public string GetFileName(string id, string extension)
         {
-            return $"{id}.workingfile";
+            return $"{id}.workingfile{extension}";
         }
 
         private void process_ErrorDataReceived(object sender, DataReceivedEventArgs e)

@@ -96,11 +96,21 @@ namespace TownSuite.CodeSigning.Client
             return failedUploads.ToArray();
         }
 
+        private static void AddFileExtensionHeader(HttpRequestMessage request, string filepath)
+        {
+            string extension = Path.GetExtension(filepath);
+            if (!string.IsNullOrEmpty(extension))
+            {
+                request.Headers.Add("X-FileExtension", extension);
+            }
+        }
+
         private async Task SendRequest(bool quickFail, bool ignoreFailures, List<(string FailedFile, string Message)> failedUploads, string filepath, HttpRequestMessage request)
         {
             try
             {
                 await semaphore.WaitAsync();
+                AddFileExtensionHeader(request, filepath);
                 using var fs = File.OpenRead(filepath);
                 request.Content = new StreamContent(fs);
                 Console.WriteLine($"Uploading file: {filepath}");
@@ -151,11 +161,20 @@ namespace TownSuite.CodeSigning.Client
                 }
                 foreach (var file in results.Failures)
                 {
-                    TrackedFiles.Remove(TrackedFiles.First(x => x.FilePath == file.FailedFile));
+                    var tracked = TrackedFiles.FirstOrDefault(x => x.FilePath == file.FailedFile);
+                    if (tracked.FilePath is not null) TrackedFiles.Remove(tracked);
                 }
                 await Task.Delay(1000);
                 count++;
             }
+
+            foreach (var file in TrackedFiles.ToArray())
+            {
+                string message = $"Timed out after {batchTimeoutInSeconds} seconds waiting for the signing service to return a signed file.";
+                failedUploads.Add((file.FilePath, message));
+                Console.WriteLine($"Timed out waiting for: {file.FilePath}");
+            }
+            TrackedFiles.Clear();
 
             return failedUploads.ToArray();
         }
@@ -178,6 +197,7 @@ namespace TownSuite.CodeSigning.Client
 
                 var request = new HttpRequestMessage(HttpMethod.Get, pollUrl);
                 request.Headers.Add("X-BatchId", batchId);
+                AddFileExtensionHeader(request, file.FilePath);
                 if (batchDetached) request.Headers.Add("X-Detached", "true");
 
                 var response = await _client.SendAsync(request);

@@ -2,11 +2,31 @@
 using Microsoft.Extensions.Primitives;
 using System.Collections;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 namespace TownSuite.CodeSigning.Service
 {
     public static class BatchedSigning
     {
+        private static readonly Regex SafeExtension = new(@"^\.[A-Za-z0-9]{1,15}$", RegexOptions.Compiled);
+
+        public static string GetSanitizedExtension(StringValues fileExtension)
+        {
+            string value = fileExtension.ToString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            value = value.Trim();
+            if (!value.StartsWith('.'))
+            {
+                value = "." + value;
+            }
+
+            return SafeExtension.IsMatch(value) ? value.ToLowerInvariant() : string.Empty;
+        }
+
         public static string GetTempFolder()
         {
             string? envTemp = Environment.GetEnvironmentVariable("TOWNSUITE_CODESIGNING_TEMP");
@@ -22,12 +42,14 @@ namespace TownSuite.CodeSigning.Service
         {
             headers.TryGetValue("X-BatchId", out var batchId);
             headers.TryGetValue("X-BatchReady", out var batchReady);
+            headers.TryGetValue("X-FileExtension", out var fileExtension);
             bool isBatchJob = VerifyBatchId(batchId);
 
             string id = Guid.NewGuid().ToString();
+            string extension = GetSanitizedExtension(fileExtension);
 
             var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), isBatchJob ? batchId : id));
-            string workingFilePath = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile");
+            string workingFilePath = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile{extension}");
             try
             {
                 workingFolder.CreateIfNotExists();
@@ -109,14 +131,20 @@ namespace TownSuite.CodeSigning.Service
 
         private static string[] GetBatchFiles(DirectoryInfo workingFolder)
         {
-            return workingFolder.GetFiles("*.workingfile").Where(p => p.Length>0).Select(p => p.Name).ToArray();
+            return workingFolder.GetFiles("*.workingfile*")
+                .Where(p => p.Length > 0)
+                .Where(p => !p.Name.EndsWith(".sig", StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.Name)
+                .ToArray();
         }
 
         public static async Task<IResult> Get(Dictionary<string, StringValues> headers, string id, ISigner signer)
         {
             headers.TryGetValue("X-BatchId", out var batchId);
+            headers.TryGetValue("X-FileExtension", out var fileExtension);
             bool isBatchJob = VerifyBatchId(batchId);
 
+            string extension = GetSanitizedExtension(fileExtension);
             var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), isBatchJob ? batchId : id));
 
             if (!workingFolder.Exists)
@@ -127,17 +155,30 @@ namespace TownSuite.CodeSigning.Service
             string signedFilesIndicator = isBatchJob ? $"{batchId}.signed" : $"{id}.signed";
             if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, signedFilesIndicator)))
             {
-                var workingFile = System.IO.Path.Combine(workingFolder.FullName, signer.GetFileName(id));
+                var workingFile = System.IO.Path.Combine(workingFolder.FullName, signer.GetFileName(id, extension));
                 var workingStream = new TempFileStream(workingFile, !isBatchJob ? workingFolder : null);
                 return Results.Stream(workingStream);
             }
 
-            if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error")))
+            string? errorFile = FindErrorFile(workingFolder, isBatchJob ? batchId.ToString() : null, id);
+            if (errorFile is not null)
             {
-                return Results.Problem(title: "Failure to sign", detail: await File.ReadAllTextAsync(System.IO.Path.Combine(workingFolder.FullName, $"{id}.error")), statusCode: 500);
+                return Results.Problem(title: "Failure to sign", detail: await File.ReadAllTextAsync(errorFile), statusCode: 500);
             }
 
             return Results.Problem(title: "Not Signed", detail: "The file has not been signed yet", statusCode: 425);
+        }
+
+        private static string? FindErrorFile(DirectoryInfo workingFolder, string? batchId, string id)
+        {
+            var candidates = new[] { $"{id}.error", batchId is null ? null : $"{batchId}.error" };
+            foreach (var candidate in candidates)
+            {
+                if (candidate is null) continue;
+                string path = System.IO.Path.Combine(workingFolder.FullName, candidate);
+                if (System.IO.File.Exists(path)) return path;
+            }
+            return null;
         }
 
         static void CleanupDir(DirectoryInfo dir, ILogger logger)

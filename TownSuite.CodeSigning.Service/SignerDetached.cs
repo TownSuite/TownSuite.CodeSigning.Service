@@ -201,14 +201,14 @@ namespace TownSuite.CodeSigning.Service
             }
         }
 
-        public string GetFileName(string id)
+        public string GetFileName(string id, string extension)
         {
             if (string.IsNullOrWhiteSpace(_settings.OpenSSL.OsslSignCodePath) || string.IsNullOrWhiteSpace(_settings.OpenSSL.TimestampOptions))
             {
-                return $"{id}.workingfile.sig";
+                return $"{id}.workingfile{extension}.sig";
             }
 
-            return $"{id}.workingfile.timestamped.sig";
+            return $"{id}.workingfile{extension}.timestamped.sig";
         }
 
         private void process_ErrorDataReceived(object sender, DataReceivedEventArgs e)
