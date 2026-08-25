@@ -104,9 +104,13 @@ namespace TownSuite.CodeSigning.Service
             return (p.ExitCode == 0, output);
         }
 
-        public string GetFileName(string id)
+        public string? FindResultFile(DirectoryInfo workingFolder, string id)
         {
-            return $"{id}.workingfile";
+            return workingFolder.GetFiles($"{id}.workingfile*")
+                .Where(f => !WorkingFolderMarkers.IsMarker(f.Name))
+                .OrderBy(f => f.Name.Length)
+                .Select(f => f.FullName)
+                .FirstOrDefault();
         }
 
         private void process_ErrorDataReceived(object sender, DataReceivedEventArgs e)

@@ -201,14 +201,18 @@ namespace TownSuite.CodeSigning.Service
             }
         }
 
-        public string GetFileName(string id)
+        public string? FindResultFile(DirectoryInfo workingFolder, string id)
         {
-            if (string.IsNullOrWhiteSpace(_settings.OpenSSL.OsslSignCodePath) || string.IsNullOrWhiteSpace(_settings.OpenSSL.TimestampOptions))
-            {
-                return $"{id}.workingfile.sig";
-            }
+            bool timestamped = !string.IsNullOrWhiteSpace(_settings.OpenSSL.OsslSignCodePath)
+                && !string.IsNullOrWhiteSpace(_settings.OpenSSL.TimestampOptions);
 
-            return $"{id}.workingfile.timestamped.sig";
+            var signatures = workingFolder.GetFiles($"{id}.workingfile*.sig");
+
+            return signatures
+                .Where(f => f.Name.EndsWith(".timestamped.sig", StringComparison.OrdinalIgnoreCase) == timestamped)
+                .OrderBy(f => f.Name.Length)
+                .Select(f => f.FullName)
+                .FirstOrDefault();
         }
 
         private void process_ErrorDataReceived(object sender, DataReceivedEventArgs e)

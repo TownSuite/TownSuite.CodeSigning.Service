@@ -59,7 +59,7 @@ namespace TownSuite.CodeSigning.Tests
                 {
                     var signer = new SignerDetached(settings, NSubstitute.Substitute.For<ILogger<SignerDetached>>());
                     string id = ids[i];
-                    string signaturePath = Path.Combine(AppContext.BaseDirectory, signer.GetFileName(id));
+                    string signaturePath = Path.Combine(AppContext.BaseDirectory, $"{id}.workingfile.timestamped.sig");
                     var dr = await BatchedSigning.Get(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>(), id, signer);
 
                     if (dr is Microsoft.AspNetCore.Http.HttpResults.FileStreamHttpResult streamResult)
@@ -96,7 +96,7 @@ namespace TownSuite.CodeSigning.Tests
                 var id = ids[i];
                 var originalFile = Path.Combine(AppContext.BaseDirectory, srcFiles[i]);
                 var signer = new SignerDetached(settings, NSubstitute.Substitute.For<ILogger<SignerDetached>>());
-                var signatureFile = Path.Combine(AppContext.BaseDirectory, signer.GetFileName(id));
+                var signatureFile = Path.Combine(AppContext.BaseDirectory, $"{id}.workingfile.timestamped.sig");
 
                 var valid = Certs.ValidateDetachedSignature(originalFile, signatureFile, OneTimeUnitTestSetup.certPath, OneTimeUnitTestSetup.password);
                 if (!valid)
