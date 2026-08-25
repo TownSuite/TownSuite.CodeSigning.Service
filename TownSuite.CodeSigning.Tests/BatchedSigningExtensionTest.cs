@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 using TownSuite.CodeSigning.Service;
@@ -35,7 +37,11 @@ namespace TownSuite.CodeSigning.Tests
                 return Task.FromResult((IsSigned, Message));
             }
 
-            public string GetFileName(string id, string extension) => $"{id}.workingfile{extension}";
+            public string? FindResultFile(DirectoryInfo workingFolder, string id) =>
+                workingFolder.GetFiles($"{id}.workingfile*")
+                    .Where(f => !WorkingFolderMarkers.IsMarker(f.Name))
+                    .Select(f => f.FullName)
+                    .FirstOrDefault();
         }
 
         private static Dictionary<string, StringValues> Headers(string batchId, string? extension, bool ready)
@@ -46,12 +52,27 @@ namespace TownSuite.CodeSigning.Tests
             return headers;
         }
 
-        private async Task<(string Id, string BatchId)> Upload(RecordingSigner signer, string? extension)
+        private static byte[] BuildZip(params (string Name, string Content)[] entries)
+        {
+            using var buffer = new MemoryStream();
+            using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                foreach (var (name, content) in entries)
+                {
+                    using var entryStream = zip.CreateEntry(name).Open();
+                    entryStream.Write(Encoding.UTF8.GetBytes(content));
+                }
+            }
+            return buffer.ToArray();
+        }
+
+        private async Task<(string Id, string BatchId)> Upload(RecordingSigner signer, string? extension,
+            byte[]? content = null)
         {
             string batchId = Guid.NewGuid().ToString();
             _foldersToClean.Add(Path.Combine(BatchedSigning.GetTempFolder(), batchId));
 
-            using var body = new MemoryStream(new byte[] { 1, 2, 3, 4 });
+            using var body = new MemoryStream(content ?? new byte[] { 1, 2, 3, 4 });
             var result = await BatchedSigning.Sign(Headers(batchId, extension, ready: true), body,
                 NSubstitute.Substitute.For<ILogger>(), signer);
 
@@ -115,6 +136,72 @@ namespace TownSuite.CodeSigning.Tests
                 Assert.That(problem!.StatusCode, Is.EqualTo(500));
                 Assert.That(problem.ProblemDetails.Detail, Does.Contain("signtool refused the package"));
             });
+        }
+
+        [Test]
+        public async Task AppxPackageWithNoHeaderIsDetectedFromItsContent()
+        {
+            var signer = new RecordingSigner();
+            await Upload(signer, null, BuildZip(("AppxManifest.xml", "<Package />"), ("App.exe", "MZ")));
+            await WaitForSigner(signer);
+
+            Assert.That(signer.ReceivedFiles.Single(), Does.EndWith(".workingfile.msix"));
+        }
+
+        [Test]
+        public async Task AppxBundleWithNoHeaderIsDetectedFromItsContent()
+        {
+            var signer = new RecordingSigner();
+            await Upload(signer, null, BuildZip(("AppxMetadata/AppxBundleManifest.xml", "<Bundle />")));
+            await WaitForSigner(signer);
+
+            Assert.That(signer.ReceivedFiles.Single(), Does.EndWith(".workingfile.msix"));
+        }
+
+        [Test]
+        public async Task PlainZipIsNotMistakenForAnAppxPackage()
+        {
+            var signer = new RecordingSigner();
+            await Upload(signer, null, BuildZip(("readme.txt", "hello"), ("bin/app", "data")));
+            await WaitForSigner(signer);
+
+            Assert.That(signer.ReceivedFiles.Single(), Does.EndWith(".workingfile"));
+        }
+
+        [Test]
+        public void NonZipContentIsNotDetected()
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"detect-{Guid.NewGuid():N}.bin");
+            try
+            {
+                File.WriteAllBytes(path, new byte[] { 0x4D, 0x5A, 0x90, 0x00, 0x03 });
+                Assert.That(BatchedSigning.DetectContainerExtension(path), Is.Empty);
+            }
+            finally
+            {
+                try { File.Delete(path); } catch { }
+            }
+        }
+
+        [Test]
+        public void TruncatedZipDoesNotThrow()
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"detect-{Guid.NewGuid():N}.bin");
+            try
+            {
+                File.WriteAllBytes(path, new byte[] { 0x50, 0x4B, 0x03, 0x04, 0x00, 0x01 });
+                Assert.That(BatchedSigning.DetectContainerExtension(path), Is.Empty);
+            }
+            finally
+            {
+                try { File.Delete(path); } catch { }
+            }
+        }
+
+        [Test]
+        public void ExplicitHeaderWinsOverContentDetection()
+        {
+            Assert.That(BatchedSigning.GetSanitizedExtension(".msi"), Is.EqualTo(".msi"));
         }
 
         [TestCase(".msix", ".msix")]

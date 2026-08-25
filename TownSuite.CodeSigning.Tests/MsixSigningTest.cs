@@ -219,13 +219,14 @@ namespace TownSuite.CodeSigning.Tests
             return null!;
         }
 
-        [Test]
-        public async Task MsixKeepingItsExtensionIsSigned()
+        private static async Task AssertSignedMsixReturned(IResult result, string because)
         {
-            var result = await SignThroughBatchEndpoint(".msix");
+            if (result is Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult problem)
+            {
+                Assert.Fail($"{because} - got {problem.StatusCode}: {problem.ProblemDetails.Detail}");
+            }
 
-            Assert.That(result, Is.InstanceOf<Microsoft.AspNetCore.Http.HttpResults.FileStreamHttpResult>(),
-                "signtool should accept an msix that still has its extension");
+            Assert.That(result, Is.InstanceOf<Microsoft.AspNetCore.Http.HttpResults.FileStreamHttpResult>(), because);
 
             string downloaded = Path.Combine(Path.GetTempPath(), $"signed-{Guid.NewGuid():N}.msix");
             try
@@ -247,18 +248,18 @@ namespace TownSuite.CodeSigning.Tests
         }
 
         [Test]
-        public async Task MsixWithoutItsExtensionReportsAFailureRatherThanStalling()
+        public async Task MsixKeepingItsExtensionIsSigned()
+        {
+            var result = await SignThroughBatchEndpoint(".msix");
+            await AssertSignedMsixReturned(result, "signtool should accept an msix that still has its extension");
+        }
+
+        [Test]
+        public async Task MsixWithNoExtensionHeaderIsStillSigned()
         {
             var result = await SignThroughBatchEndpoint(null);
-
-            var problem = result as Microsoft.AspNetCore.Http.HttpResults.ProblemHttpResult;
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(problem, Is.Not.Null, "an unsignable package must not look like a success");
-                Assert.That(problem!.StatusCode, Is.EqualTo(500));
-                Assert.That(problem.ProblemDetails.Detail, Does.Contain("not recognized"));
-            });
+            await AssertSignedMsixReturned(result,
+                "a client that sends no X-FileExtension must still get a signed msix via content detection");
         }
     }
 }

@@ -197,7 +197,6 @@ namespace TownSuite.CodeSigning.Client
 
                 var request = new HttpRequestMessage(HttpMethod.Get, pollUrl);
                 request.Headers.Add("X-BatchId", batchId);
-                AddFileExtensionHeader(request, file.FilePath);
                 if (batchDetached) request.Headers.Add("X-Detached", "true");
 
                 var response = await _client.SendAsync(request);

@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 using System.Collections;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
@@ -25,6 +26,30 @@ namespace TownSuite.CodeSigning.Service
             }
 
             return SafeExtension.IsMatch(value) ? value.ToLowerInvariant() : string.Empty;
+        }
+
+        public static string DetectContainerExtension(string filePath)
+        {
+            try
+            {
+                using var stream = File.OpenRead(filePath);
+                Span<byte> magic = stackalloc byte[4];
+                if (stream.Read(magic) != 4) return string.Empty;
+                if (magic[0] != 0x50 || magic[1] != 0x4B) return string.Empty;
+
+                stream.Position = 0;
+                using var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
+                bool isAppxPackage = zip.Entries.Any(e =>
+                    e.FullName.Equals("AppxManifest.xml", StringComparison.OrdinalIgnoreCase)
+                    || e.FullName.Equals("AppxBundleManifest.xml", StringComparison.OrdinalIgnoreCase)
+                    || e.FullName.Equals("AppxMetadata/AppxBundleManifest.xml", StringComparison.OrdinalIgnoreCase));
+
+                return isAppxPackage ? ".msix" : string.Empty;
+            }
+            catch (Exception)
+            {
+                return string.Empty;
+            }
         }
 
         public static string GetTempFolder()
@@ -58,6 +83,17 @@ namespace TownSuite.CodeSigning.Service
                 {
                     if (body.CanSeek) body.Position = 0;
                     await body.CopyToAsync(fileStream);
+                }
+
+                if (string.IsNullOrEmpty(extension))
+                {
+                    extension = DetectContainerExtension(workingFilePath);
+                    if (!string.IsNullOrEmpty(extension))
+                    {
+                        string detectedPath = System.IO.Path.Combine(workingFolder.FullName, $"{id}.workingfile{extension}");
+                        File.Move(workingFilePath, detectedPath, overwrite: true);
+                        workingFilePath = detectedPath;
+                    }
                 }
 
                 if (!isBatchJob)
@@ -133,7 +169,7 @@ namespace TownSuite.CodeSigning.Service
         {
             return workingFolder.GetFiles("*.workingfile*")
                 .Where(p => p.Length > 0)
-                .Where(p => !p.Name.EndsWith(".sig", StringComparison.OrdinalIgnoreCase))
+                .Where(p => !WorkingFolderMarkers.IsMarker(p.Name))
                 .Select(p => p.Name)
                 .ToArray();
         }
@@ -141,10 +177,8 @@ namespace TownSuite.CodeSigning.Service
         public static async Task<IResult> Get(Dictionary<string, StringValues> headers, string id, ISigner signer)
         {
             headers.TryGetValue("X-BatchId", out var batchId);
-            headers.TryGetValue("X-FileExtension", out var fileExtension);
             bool isBatchJob = VerifyBatchId(batchId);
 
-            string extension = GetSanitizedExtension(fileExtension);
             var workingFolder = new DirectoryInfo(Path.Combine(GetTempFolder(), isBatchJob ? batchId : id));
 
             if (!workingFolder.Exists)
@@ -155,7 +189,13 @@ namespace TownSuite.CodeSigning.Service
             string signedFilesIndicator = isBatchJob ? $"{batchId}.signed" : $"{id}.signed";
             if (System.IO.File.Exists(System.IO.Path.Combine(workingFolder.FullName, signedFilesIndicator)))
             {
-                var workingFile = System.IO.Path.Combine(workingFolder.FullName, signer.GetFileName(id, extension));
+                var workingFile = signer.FindResultFile(workingFolder, id);
+                if (workingFile is null)
+                {
+                    return Results.Problem(title: "Failure to sign",
+                        detail: $"The signing result for {id} was not found in the working folder.", statusCode: 500);
+                }
+
                 var workingStream = new TempFileStream(workingFile, !isBatchJob ? workingFolder : null);
                 return Results.Stream(workingStream);
             }

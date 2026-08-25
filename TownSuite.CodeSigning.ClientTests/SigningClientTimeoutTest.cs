@@ -92,7 +92,7 @@ namespace TownSuite.CodeSigning.ClientTests
         }
 
         [Test]
-        public async Task OriginalExtensionIsSentOnUploadAndPoll()
+        public async Task OriginalExtensionIsSentOnUpload()
         {
             string filePath = Path.Combine(_tempDir, "installer.msix");
             File.WriteAllBytes(filePath, new byte[] { 1, 2, 3 });
@@ -106,8 +106,8 @@ namespace TownSuite.CodeSigning.ClientTests
             {
                 Assert.That(handler.UploadExtensionHeaders, Is.Not.Empty);
                 Assert.That(handler.UploadExtensionHeaders, Has.All.EqualTo(".msix"));
-                Assert.That(handler.PollExtensionHeaders, Is.Not.Empty);
-                Assert.That(handler.PollExtensionHeaders, Has.All.EqualTo(".msix"));
+                Assert.That(handler.PollExtensionHeaders, Has.All.Null,
+                    "the poll no longer needs the extension; the service locates the result by id");
             });
         }
     }
