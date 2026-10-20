@@ -324,7 +324,16 @@ async Task<bool> ProcessFiles(string[]? filepaths, string url, bool quickFail, b
     // Copy signed files to all duplicate locations
     if (duplicateMap.Count > 0)
     {
-        FileHelpers.CopySignedFilesToDuplicates(duplicateMap);
+        var copyFailures = FileHelpers.CopySignedFilesToDuplicates(duplicateMap, detached);
+        if (copyFailures.Count > 0)
+        {
+            foreach (var result in copyFailures)
+            {
+                Console.WriteLine($"Failed to sign duplicate file: {result.FailedFile}");
+                Console.WriteLine(result.Message);
+            }
+            return true;
+        }
     }
 
     return false;
