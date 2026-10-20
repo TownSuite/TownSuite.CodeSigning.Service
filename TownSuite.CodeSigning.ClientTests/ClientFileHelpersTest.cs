@@ -480,12 +480,34 @@ namespace TownSuite.CodeSigning.ClientTests
     public class FileHelpersDeduplicationTests
     {
         private string _tempDir;
+        private string _signedDllCopy;
+        private string _unsignedDllCopy;
+        private string _unsignedDllSrc;
 
         [SetUp]
         public void SetUp()
         {
             _tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
             Directory.CreateDirectory(_tempDir);
+
+            var testDir = TestContext.CurrentContext.TestDirectory;
+            _unsignedDllSrc = Path.Combine(testDir, "test_unsigned.dll");
+            _signedDllCopy = Path.Combine(_tempDir, "test_already_signed.dll");
+            _unsignedDllCopy = Path.Combine(_tempDir, "test_unsigned.dll");
+            File.Copy(Path.Combine(testDir, "test_already_signed.dll"), _signedDllCopy, true);
+            File.Copy(_unsignedDllSrc, _unsignedDllCopy, true);
+        }
+
+        private static byte[] SignDetached(byte[] content)
+        {
+            using var rsa = RSA.Create(2048);
+            var req = new CertificateRequest("CN=FileHelpersTestCert", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+
+            var contentInfo = new ContentInfo(content);
+            var signedCms = new SignedCms(contentInfo, detached: true);
+            signedCms.ComputeSignature(new CmsSigner(cert));
+            return signedCms.Encode();
         }
 
         [TearDown]
@@ -580,28 +602,117 @@ namespace TownSuite.CodeSigning.ClientTests
         }
 
         [Test]
-        public void CopySignedFilesToDuplicates_CopiesContentCorrectly()
+        public void CopySignedFilesToDuplicates_CopiesSignedFileToEveryDuplicate()
         {
-            string canonical = Path.Combine(_tempDir, "signed.dll");
             string dup1 = Path.Combine(_tempDir, "dup1.dll");
             string dup2 = Path.Combine(_tempDir, "dup2.dll");
-
-            byte[] signedBytes = new byte[] { 0x4D, 0x5A, 0xAA, 0x01 };
-            byte[] originalBytes = new byte[] { 0x4D, 0x5A, 0x00, 0x00 };
-
-            File.WriteAllBytes(canonical, signedBytes);
-            File.WriteAllBytes(dup1, originalBytes);
-            File.WriteAllBytes(dup2, originalBytes);
+            File.Copy(_unsignedDllSrc, dup1, true);
+            File.Copy(_unsignedDllSrc, dup2, true);
 
             var dupeMap = new Dictionary<string, List<string>>
             {
-                { canonical, new List<string> { dup1, dup2 } }
+                { _signedDllCopy, new List<string> { dup1, dup2 } }
             };
 
-            FileHelpers.CopySignedFilesToDuplicates(dupeMap);
+            var failures = FileHelpers.CopySignedFilesToDuplicates(dupeMap, isDetached: false);
 
-            Assert.That(File.ReadAllBytes(dup1), Is.EqualTo(signedBytes));
-            Assert.That(File.ReadAllBytes(dup2), Is.EqualTo(signedBytes));
+            Assert.That(failures, Is.Empty);
+            Assert.That(File.ReadAllBytes(dup1), Is.EqualTo(File.ReadAllBytes(_signedDllCopy)));
+            Assert.That(File.ReadAllBytes(dup2), Is.EqualTo(File.ReadAllBytes(_signedDllCopy)));
+        }
+
+        [Test]
+        public void CopySignedFilesToDuplicates_ReportsDuplicateThatCouldNotBeCopied()
+        {
+            // The directory does not exist, so File.Copy throws. That location keeps whatever it
+            // had - the unsigned original - so the run has to fail rather than report success.
+            string unreachable = Path.Combine(_tempDir, "missing-dir", "dup.dll");
+
+            var dupeMap = new Dictionary<string, List<string>>
+            {
+                { _signedDllCopy, new List<string> { unreachable } }
+            };
+
+            var failures = FileHelpers.CopySignedFilesToDuplicates(dupeMap, isDetached: false);
+
+            Assert.That(failures, Has.Count.EqualTo(1));
+            Assert.That(failures[0].FailedFile, Is.EqualTo(Path.GetFullPath(unreachable)));
+        }
+
+        [Test]
+        public void CopySignedFilesToDuplicates_ReportsDuplicateWhoseCopyIsNotSigned()
+        {
+            string dup = Path.Combine(_tempDir, "dup.dll");
+            File.Copy(_unsignedDllSrc, dup, true);
+
+            var dupeMap = new Dictionary<string, List<string>>
+            {
+                { _unsignedDllCopy, new List<string> { dup } }
+            };
+
+            var failures = FileHelpers.CopySignedFilesToDuplicates(dupeMap, isDetached: false);
+
+            Assert.That(failures, Has.Count.EqualTo(1));
+            Assert.That(failures[0].FailedFile, Is.EqualTo(Path.GetFullPath(dup)));
+        }
+
+        [Test]
+        public void CopySignedFilesToDuplicates_ReportsEveryDuplicateWhenCanonicalIsMissing()
+        {
+            string dup1 = Path.Combine(_tempDir, "dup1.dll");
+            string dup2 = Path.Combine(_tempDir, "dup2.dll");
+            File.Copy(_unsignedDllSrc, dup1, true);
+            File.Copy(_unsignedDllSrc, dup2, true);
+
+            var dupeMap = new Dictionary<string, List<string>>
+            {
+                { Path.Combine(_tempDir, "gone.dll"), new List<string> { dup1, dup2 } }
+            };
+
+            var failures = FileHelpers.CopySignedFilesToDuplicates(dupeMap, isDetached: false);
+
+            Assert.That(failures.Select(f => f.FailedFile), Is.EquivalentTo(new[] { dup1, dup2 }));
+        }
+
+        [Test]
+        public void CopySignedFilesToDuplicates_Detached_CopiesSignatureNextToEveryDuplicate()
+        {
+            byte[] content = new byte[] { 0x50, 0x4B, 0x03, 0x04, 0x01, 0x02 };
+            string canonical = Path.Combine(_tempDir, "package.zip");
+            string dup = Path.Combine(_tempDir, "package-copy.zip");
+            File.WriteAllBytes(canonical, content);
+            File.WriteAllBytes(dup, content);
+            File.WriteAllBytes(canonical + ".sig", SignDetached(content));
+
+            var dupeMap = new Dictionary<string, List<string>>
+            {
+                { canonical, new List<string> { dup } }
+            };
+
+            var failures = FileHelpers.CopySignedFilesToDuplicates(dupeMap, isDetached: true);
+
+            Assert.That(failures, Is.Empty);
+            Assert.IsTrue(FileHelpers.HasValidDetachedSignature(dup, dup + ".sig"));
+        }
+
+        [Test]
+        public void CopySignedFilesToDuplicates_Detached_ReportsDuplicateWhenCanonicalHasNoSignature()
+        {
+            byte[] content = new byte[] { 0x50, 0x4B, 0x03, 0x04 };
+            string canonical = Path.Combine(_tempDir, "package.zip");
+            string dup = Path.Combine(_tempDir, "package-copy.zip");
+            File.WriteAllBytes(canonical, content);
+            File.WriteAllBytes(dup, content);
+
+            var dupeMap = new Dictionary<string, List<string>>
+            {
+                { canonical, new List<string> { dup } }
+            };
+
+            var failures = FileHelpers.CopySignedFilesToDuplicates(dupeMap, isDetached: true);
+
+            Assert.That(failures, Has.Count.EqualTo(1));
+            Assert.That(failures[0].FailedFile, Is.EqualTo(dup));
         }
     }
 

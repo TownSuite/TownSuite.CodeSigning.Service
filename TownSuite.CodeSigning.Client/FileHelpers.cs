@@ -544,11 +544,20 @@ public static class FileHelpers
     }
 
     /// <summary>
-    /// After signing, copies each signed canonical file to all its duplicate locations.
+    /// After signing, copies each signed canonical file to all its duplicate locations - or, for
+    /// detached signing, copies the canonical file's .sig next to each duplicate - and verifies
+    /// every copy the same way SigningClient verifies a downloaded file.
+    ///
+    /// Returns one failure per duplicate that was not copied or does not verify. A duplicate is
+    /// shipped like any other matched file, so a copy that failed must fail the run: otherwise
+    /// the run reports success while that location still holds the unsigned original.
     /// </summary>
-    public static void CopySignedFilesToDuplicates(Dictionary<string, List<string>> duplicateMap)
+    public static List<(string FailedFile, string Message)> CopySignedFilesToDuplicates(
+        Dictionary<string, List<string>> duplicateMap, bool isDetached)
     {
         ArgumentNullException.ThrowIfNull(duplicateMap);
+
+        var failures = new List<(string FailedFile, string Message)>();
 
         foreach (var (canonical, duplicates) in duplicateMap)
         {
@@ -564,13 +573,20 @@ public static class FileHelpers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Skipping canonical path '{canonical}' - invalid path: {ex.Message}");
+                foreach (string duplicate in duplicates)
+                {
+                    failures.Add((duplicate, $"Invalid signed canonical path '{canonical}': {ex.Message}"));
+                }
                 continue;
             }
 
-            if (!File.Exists(canonicalFull))
+            string source = isDetached ? canonicalFull + ".sig" : canonicalFull;
+            if (!File.Exists(source))
             {
-                Console.WriteLine($"Signed canonical file not found, skipping copies: {canonicalFull}");
+                foreach (string duplicate in duplicates)
+                {
+                    failures.Add((duplicate, $"Signed canonical file not found: {source}"));
+                }
                 continue;
             }
 
@@ -588,7 +604,7 @@ public static class FileHelpers
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Skipping duplicate path '{duplicate}' - invalid path: {ex.Message}");
+                    failures.Add((duplicate, $"Invalid duplicate path: {ex.Message}"));
                     continue;
                 }
 
@@ -599,16 +615,32 @@ public static class FileHelpers
                     continue;
                 }
 
+                string destination = isDetached ? duplicateFull + ".sig" : duplicateFull;
                 try
                 {
-                    File.Copy(canonicalFull, duplicateFull, overwrite: true);
-                    Console.WriteLine($"Copied signed file {canonicalFull} to duplicate location: {duplicateFull}");
+                    File.Copy(source, destination, overwrite: true);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to copy signed file from '{canonicalFull}' to '{duplicateFull}': {ex.Message}");
+                    failures.Add((duplicateFull, $"Failed to copy signed file from '{source}' to '{destination}': {ex.Message}"));
+                    continue;
                 }
+
+                bool verified = isDetached
+                    ? HasValidDetachedSignature(duplicateFull, destination)
+                    : HasEmbeddedDigitalSignature(duplicateFull);
+                if (!verified)
+                {
+                    failures.Add((duplicateFull, isDetached
+                        ? "Copied detached signature is missing or invalid."
+                        : "Copied file is missing a digital signature."));
+                    continue;
+                }
+
+                Console.WriteLine($"Copied signed file {source} to duplicate location: {destination}");
             }
         }
+
+        return failures;
     }
 }
