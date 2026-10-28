@@ -14,4 +14,8 @@
     <DebugSymbols>False</DebugSymbols>
     <DebugType>None</DebugType>
   </PropertyGroup>
+  <!-- On Jenkins, AUTOCONFIGURE_NUGET writes a NuGet config that restores through the local ProGet cache. -->
+  <PropertyGroup Condition=" '$(NUGET_CONFIG_FILE)' != '' ">
+    <RestoreConfigFile>$(NUGET_CONFIG_FILE)</RestoreConfigFile>
+  </PropertyGroup>
 </Project>
