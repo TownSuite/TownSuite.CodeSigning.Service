@@ -28,6 +28,25 @@
         /// </summary>
         public int HealthCheckQueueStallInMs { get; init; }
 
+        /// <summary>
+        /// Number of consecutive failed canary runs before readiness reports Unhealthy. Until the
+        /// threshold is reached a failing canary reports Degraded (still HTTP 200), so a single
+        /// blip - a signtool timeout, a momentarily locked file - does not pull the instance out
+        /// of rotation. Defaults to 3 when unset (0 or negative), i.e. a real failure surfaces
+        /// after three <see cref="HealthCheckCacheInMs"/> intervals.
+        /// </summary>
+        public int HealthCheckFailureThreshold { get; init; }
+
+        /// <summary>
+        /// signtool arguments for the readiness canary. When unset, defaults to
+        /// <see cref="SignToolOptions"/> with the timestamp options (/t, /tr, /td, /tseal)
+        /// removed, so the canary proves signtool and the private key are working without
+        /// depending on the timestamp authority - which is a third party subject to rate limiting
+        /// and outages, and which was failing canary runs that had nothing wrong with them.
+        /// Real signing requests are unaffected and still timestamp.
+        /// </summary>
+        public string? CanarySignToolOptions { get; init; }
+
         public OpenSSLSettings OpenSSL { get; init; }
 
         /// <summary>

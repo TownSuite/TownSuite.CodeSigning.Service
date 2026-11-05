@@ -17,10 +17,22 @@ namespace TownSuite.CodeSigning.Service
         readonly object _msgLock = new object();
 
         readonly ILogger _logger;
+
+        // Held separately from the settings so a caller can sign with a variant of
+        // the configured arguments. The readiness canary signs without timestamping so it does
+        // not depend on the timestamp authority; see SigningHealthCheck.
+        readonly string _signToolOptions;
+
         public Signer(Settings settings, ILogger logger)
+            : this(settings, logger, settings.SignToolOptions)
+        {
+        }
+
+        public Signer(Settings settings, ILogger logger, string signToolOptions)
         {
             _settings = settings;
             _logger = logger;
+            _signToolOptions = signToolOptions;
         }
 
         private void AppendMessage(string line)
@@ -48,13 +60,13 @@ namespace TownSuite.CodeSigning.Service
 
             if (files.Length == 1)
             {
-                p.StartInfo.Arguments = _settings.SignToolOptions
+                p.StartInfo.Arguments = _signToolOptions
                     .Replace("{FilePath}", files[0])
                     .Replace("{BaseDirectory}", AppContext.BaseDirectory + System.IO.Path.DirectorySeparatorChar);
             }
             else
             {
-                p.StartInfo.Arguments = _settings.SignToolOptions
+                p.StartInfo.Arguments = _signToolOptions
                     .Replace("\"{FilePath}\"", string.Join(" ", files))
                     .Replace("{BaseDirectory}", AppContext.BaseDirectory + System.IO.Path.DirectorySeparatorChar);
             }
