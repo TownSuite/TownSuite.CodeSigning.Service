@@ -140,15 +140,27 @@ All three respond immediately. They read state from memory and never invoke `sig
 filesystem, or call the timestamp server on the request path.
 
 The readiness signing canary — which signs a throwaway PE file to prove the private key is still
-usable — runs on a background timer instead, because `signtool` contacts the timestamp server and
-takes seconds (up to `SigntoolTimeoutInMs`) or stalls outright. `HealthCheckCacheInMs` sets that
-refresh interval (default 30s), so it controls how quickly a signing failure is *noticed*, not how
-fast probes respond. Two consequences worth knowing:
+usable — runs on a background timer instead, because `signtool` takes seconds (up to
+`SigntoolTimeoutInMs`) or stalls outright. `HealthCheckCacheInMs` sets that refresh interval
+(default 30s), so it controls how quickly a signing failure is *noticed*, not how fast probes
+respond. Four consequences worth knowing:
 
 - Before the first canary run finishes, readiness reports `Degraded` (HTTP 200) rather than failing
   a container that is merely still starting.
 - If the canary result goes older than three refresh intervals the refresher has stopped, so
   readiness reports `Degraded` with a staleness message instead of a stale `Healthy`.
+- **The canary does not timestamp.** It runs `SignToolOptions` with the timestamp options (`/t`,
+  `/tr`, `/td`, `/tseal`) stripped. The timestamp authority is a third party subject to rate
+  limiting and outages, and a canary firing every `HealthCheckCacheInMs` is a steady stream of
+  requests against it; a throttled authority made `signtool` stall past its timeout and failed
+  readiness on services whose signing was fine. Proving `signtool` runs and the private key is
+  reachable does not need a timestamp. Real signing requests still timestamp, so a broken authority
+  surfaces on the requests it actually breaks. Set `CanarySignToolOptions` to override the stripped
+  arguments if the automatic strip does not suit your options.
+- **One failed run does not fail readiness.** The canary has to fail `HealthCheckFailureThreshold`
+  times in a row (default 3, so ~90s at the default interval) before reporting `Unhealthy`. Below
+  that it reports `Degraded` (HTTP 200) naming the streak, so a single blip does not pull the
+  instance out of rotation. Lower the threshold to 1 to restore fail-on-first-failure.
 
 # Admin status dashboard
 

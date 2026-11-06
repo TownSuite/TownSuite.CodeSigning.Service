@@ -8,12 +8,23 @@ namespace TownSuite.CodeSigning.Service
     /// immediately: nothing on this path waits on signtool, the filesystem or the network.
     ///
     /// 1. A signing canary: signs a throwaway copy of a real PE file with the configured
-    ///    signtool settings. If signing fails (for example
+    ///    signtool settings, minus timestamping. If signing fails (for example
     ///    "SignTool Error: No private key is available.") the service is reported unhealthy.
-    ///    signtool shells out and contacts the timestamp server, which takes seconds and can
-    ///    stall outright, so it is never run inside a probe request. <see cref="SigningCanaryService"/>
-    ///    calls <see cref="RefreshAsync"/> on a timer and <see cref="CheckHealthAsync"/> only
-    ///    reads the last published result.
+    ///    signtool shells out and can take seconds, so it is never run inside a probe request.
+    ///    <see cref="SigningCanaryService"/> calls <see cref="RefreshAsync"/> on a timer and
+    ///    <see cref="CheckHealthAsync"/> only reads the last published result.
+    ///
+    ///    The canary does not timestamp. The timestamp authority is a third party subject to rate
+    ///    limiting and outages, and a canary running every <see cref="RefreshInterval"/> is a
+    ///    steady source of requests against it; a throttled authority made signtool stall past
+    ///    <see cref="Settings.SigntoolTimeoutInMs"/> and failed readiness for a service whose
+    ///    signing was in fact fine. What the canary is here to prove - signtool runs and the
+    ///    private key is reachable - needs no timestamp. Real signing requests still timestamp,
+    ///    so a broken timestamp authority surfaces there, on the requests it actually breaks.
+    ///
+    ///    A single failed run does not fail readiness either: failures have to repeat
+    ///    <see cref="Settings.HealthCheckFailureThreshold"/> times in a row before the canary
+    ///    reports Unhealthy, so one blip degrades rather than pulling the instance from rotation.
     ///
     /// 2. A queue-drain check: batch signing runs asynchronously on <see cref="BackgroundQueue"/>,
     ///    so signtool passing the canary does not prove queued jobs are being processed. If the
@@ -38,9 +49,20 @@ namespace TownSuite.CodeSigning.Service
         public static string CanaryFolderPath =>
             Path.Combine(BatchedSigning.GetTempFolder(), CanaryFolderName);
 
+        /// <summary>
+        /// Default for <see cref="Settings.HealthCheckFailureThreshold"/>.
+        /// </summary>
+        private const int DefaultFailureThreshold = 3;
+
         private readonly Settings _settings;
         private readonly ILogger _logger;
         private readonly BackgroundQueue _queue;
+
+        // Resolved once: the regex strip in SignToolArguments should not run on every refresh.
+        private readonly string _canarySignToolOptions;
+
+        // Only ever touched inside _refreshGate, so a plain field is enough.
+        private int _consecutiveFailures;
 
         // Collapses overlapping refreshes; never waited on by a request thread.
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
@@ -60,6 +82,9 @@ namespace TownSuite.CodeSigning.Service
             _settings = settings;
             _logger = logger;
             _queue = queue;
+            _canarySignToolOptions = !string.IsNullOrWhiteSpace(settings.CanarySignToolOptions)
+                ? settings.CanarySignToolOptions
+                : SignToolArguments.StripTimestampOptions(settings.SignToolOptions);
         }
 
         /// <summary>
@@ -69,6 +94,12 @@ namespace TownSuite.CodeSigning.Service
             TimeSpan.FromMilliseconds(_settings.HealthCheckCacheInMs > 0 ? _settings.HealthCheckCacheInMs : 30000);
 
         private TimeSpan StaleAfter => RefreshInterval * StaleAfterIntervals;
+
+        /// <summary>
+        /// Consecutive failed canary runs required before readiness reports Unhealthy.
+        /// </summary>
+        private int FailureThreshold =>
+            _settings.HealthCheckFailureThreshold > 0 ? _settings.HealthCheckFailureThreshold : DefaultFailureThreshold;
 
         private TimeSpan QueueStallWindow =>
             TimeSpan.FromMilliseconds(_settings.HealthCheckQueueStallInMs > 0 ? _settings.HealthCheckQueueStallInMs : 60000);
@@ -104,12 +135,44 @@ namespace TownSuite.CodeSigning.Service
             try
             {
                 var result = await RunSignCanaryAsync();
-                _snapshot = new CanarySnapshot(result, DateTimeOffset.UtcNow);
+                _snapshot = new CanarySnapshot(ApplyFailureThreshold(result), DateTimeOffset.UtcNow);
             }
             finally
             {
                 _refreshGate.Release();
             }
+        }
+
+        /// <summary>
+        /// Holds a failing canary at Degraded until it has failed <see cref="FailureThreshold"/>
+        /// times in a row. Signing is a shell-out with real-world flakiness - signtool can time
+        /// out, a file can be briefly locked - and one bad run is not evidence the service is
+        /// broken. Degraded still returns HTTP 200, so the instance stays in rotation while the
+        /// streak builds, and the published timestamp still moves so the staleness check in
+        /// <see cref="ReadCanaryResult"/> does not fire on top of it.
+        /// </summary>
+        private HealthCheckResult ApplyFailureThreshold(HealthCheckResult result)
+        {
+            if (result.Status != HealthStatus.Unhealthy)
+            {
+                _consecutiveFailures = 0;
+                return result;
+            }
+
+            _consecutiveFailures++;
+
+            if (_consecutiveFailures >= FailureThreshold)
+            {
+                _logger.LogError(
+                    $"Readiness signing canary has failed {_consecutiveFailures} time(s) in a row: {result.Description}");
+                return result;
+            }
+
+            var message =
+                $"Code signing canary failed {_consecutiveFailures} of {FailureThreshold} consecutive runs " +
+                $"needed to report unhealthy. Last failure: {result.Description}";
+            _logger.LogWarning(message);
+            return HealthCheckResult.Degraded(message);
         }
 
         private HealthCheckResult ReadCanaryResult()
@@ -182,7 +245,7 @@ namespace TownSuite.CodeSigning.Service
                 var source = Assembly.GetExecutingAssembly().Location;
                 File.Copy(source, canaryPath, true);
 
-                var signer = new Signer(_settings, _logger);
+                var signer = new Signer(_settings, _logger, _canarySignToolOptions);
                 var result = await signer.SignAsync(workingFolder.FullName, new[] { canaryPath });
 
                 if (result.IsSigned)
@@ -190,13 +253,13 @@ namespace TownSuite.CodeSigning.Service
                     return HealthCheckResult.Healthy("Code signing is operational.");
                 }
 
-                _logger.LogError($"Readiness signing canary failed: {result.Message}");
+                // Logged by ApplyFailureThreshold, which knows whether this is a blip or a streak.
                 return HealthCheckResult.Unhealthy($"Code signing is failing. {result.Message}");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Readiness signing canary threw an exception");
-                return HealthCheckResult.Unhealthy("Code signing is failing.", ex);
+                return HealthCheckResult.Unhealthy($"Code signing is failing. {ex.Message}", ex);
             }
             finally
             {
