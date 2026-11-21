@@ -1,9 +1,17 @@
 
 library 'ts-jenkins-shared-library@main'
 
+// main and release branches start at most one build an hour instead of one per push: a push
+// that arrives inside the hour waits in the queue, later pushes fold into that one build, and
+// it builds the newest commit when the hour is up. A build started by hand is not held back
+// (userBoost). Pull requests and other branches build on every push; the limit there is set
+// too high to ever apply. TownSuite/TownSuite.IssueTracker#17881.
+int builds_per_hour = townsuite.is_publishing_branch() ? 1 : 1000
+
 pipeline {
     agent none
     options {
+        rateLimitBuilds(throttle: [count: builds_per_hour, durationName: 'hour', userBoost: true])
         copyArtifactPermission('*/TownSuite-Artifact-Publish')
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timestamps()
